@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/UpsTools.Core/UpsTools.Core.csproj" />
+    <Project Path="src/UpsTools/UpsTools.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/UpsTools.Tests/UpsTools.Tests.csproj" />
+  </Folder>
+</Solution>

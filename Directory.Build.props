@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <!-- Windows 10 2004+ is the minimum for the WinRT Bluetooth LE APIs used here. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <Version>0.1.0</Version>
+    <Product>UPS Tools</Product>
+    <Authors>Dmytro Kozlov</Authors>
+    <Copyright>Copyright © Dmytro Kozlov</Copyright>
+  </PropertyGroup>
+</Project>

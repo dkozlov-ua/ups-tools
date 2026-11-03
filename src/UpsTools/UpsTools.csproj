@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>UpsTools</RootNamespace>
+    <AssemblyName>UpsTools</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <!-- Only for System.Windows.Forms.NotifyIcon (tray icon); WPF has no built-in equivalent. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <!-- WPF0001: the Fluent ThemeMode API is still marked experimental. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Keep WinForms/GDI+ out of the global usings so they don't clash with WPF types. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UpsTools.Core\UpsTools.Core.csproj" />
+  </ItemGroup>
+
+</Project>
