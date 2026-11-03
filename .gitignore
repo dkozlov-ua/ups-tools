@@ -1,8 +1,9 @@
 bin/
 obj/
-artifacts/
 .vs/
 .idea/
 *.user
 TestResults/
-.venv/
+
+# package.ps1's output: the staged package and its zip (see RELEASE.md)
+Releases/

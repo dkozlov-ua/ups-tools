@@ -39,9 +39,18 @@ over Wi-Fi.
 - Windows 10 2004 or later (Windows 11 recommended), Bluetooth LE adapter
 - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64)
 
-## Usage
+## Install
 
-Download the exe from [Releases](https://github.com/dkozlov-ua/ups-tools/releases) and run it.
+Download `UpsTools-X.Y.Z.zip` from [Releases](https://github.com/dkozlov-ua/ups-tools/releases), unzip it, and run
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1 -Launch
+```
+
+It installs into `%LOCALAPPDATA%\Programs\UpsTools` with a *UPS Tools* Start menu shortcut. Running a newer package's
+`install.ps1` updates that folder in place; `install.ps1 -Uninstall` removes it. See [RELEASE.md](RELEASE.md).
+
+## Usage
 
 - Configuration → **Find UPS…** → select your UPS → **Pair**.
 - Settings and the log are in `%APPDATA%\UpsTools` (`settings.json`, `ups-tools.log`).
@@ -63,12 +72,7 @@ dotnet run --project src/UpsTools
 | `src/UpsTools` | WPF app (Fluent theme, tray icon, settings, script runner) |
 | `tests/UpsTools.Tests` | Protocol tests against reference vectors and a real Elite 100 V2 register dump |
 | `tools/make-icon.cs` | Regenerates `app.ico`: `dotnet run tools/make-icon.cs` |
-| `build/release.ps1` | Local release build + GitHub release |
+| `VERSION` | The only version, `X.Y.Z` |
+| `package.ps1`, `publish.ps1`, `install.ps1` | Release package, GitHub release, installer: see [RELEASE.md](RELEASE.md) |
 
 To support another manufacturer, implement `IUpsDriver` / `IUpsConnection` and register it in `UpsDrivers`.
-
-### Releasing
-
-1. Bump `<Version>` in `Directory.Build.props` and commit.
-2. Run `./build/release.ps1` (needs the `gh` CLI, logged in). It tests, publishes, tags `vX.Y.Z`, pushes the tag
-   and uploads the exe and a zip to GitHub Releases. `-DryRun` only builds the artifacts.

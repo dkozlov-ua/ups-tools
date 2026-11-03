@@ -1,0 +1,13 @@
+# Line endings for this repo.
+#
+# The working tree and the repository are both LF. Nothing here needs CRLF:
+# MSBuild, the C# compiler, XAML, PowerShell and Notepad all read LF fine, and
+# declaring it here (rather than leaning on each machine's core.autocrlf) means
+# no tool rewrites part of a file with the other ending.
+
+* text=auto eol=lf
+
+# The app's window, taskbar and tray icon.
+*.ico binary
+# The icon preview shown in the README.
+*.png binary

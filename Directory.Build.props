@@ -8,7 +8,8 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
-    <Version>0.1.0</Version>
+    <!-- VERSION (one line, X.Y.Z) is the only version; package.ps1 and publish.ps1 read it too. -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</Version>
     <Product>UPS Tools</Product>
     <Authors>Dmytro Kozlov</Authors>
     <Copyright>Copyright © Dmytro Kozlov</Copyright>
