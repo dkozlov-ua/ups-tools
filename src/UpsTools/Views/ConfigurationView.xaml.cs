@@ -49,6 +49,10 @@ public partial class ConfigurationView : UserControl
         if (File.Exists(AppLog.FilePath)) Open(AppLog.FilePath);
     }
 
+    private void TestNotification_Click(object sender, RoutedEventArgs e) => Controller.SendTestNotification();
+
+    private void WindowsNotificationSettings_Click(object sender, RoutedEventArgs e) => Open("ms-settings:notifications");
+
     private void OpenGitHub_Click(object sender, RoutedEventArgs e) => Open(ProjectUrl);
 
     private static void Open(string target) => Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();

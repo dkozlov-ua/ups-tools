@@ -19,8 +19,11 @@ public sealed class ConfigurationViewModel : ObservableObject
         _periodChanged = periodChanged;
         UpdatePeriodText = settings.UpdatePeriodSeconds.ToString();
         StartWithWindows = StartupRegistration.IsEnabled;
+        Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new NotificationOption(kind, settings, changed))];
         RefreshPairing();
     }
+
+    public IReadOnlyList<NotificationOption> Notifications { get; }
 
     public string Version { get; } = "Version " + (Assembly.GetExecutingAssembly()
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "?");
@@ -88,5 +91,24 @@ public sealed class ConfigurationViewModel : ObservableObject
         PairedDetail = ups is null
             ? "Find your UPS to start monitoring it."
             : $"{ups.Name} · {ups.Address} · via Bluetooth LE";
+    }
+}
+
+/// <summary>Whether one event shows a Windows notification.</summary>
+public sealed class NotificationOption(UpsEventKind kind, AppSettings settings, Action changed) : ObservableObject
+{
+    public UpsEventKind Kind { get; } = kind;
+    public string Title { get; } = kind.Title();
+
+    public bool IsEnabled
+    {
+        get => settings.NotifyOn(Kind);
+        set
+        {
+            if (settings.NotifyOn(Kind) == value) return;
+            settings.Notifications[Kind] = value;
+            OnPropertyChanged();
+            changed();
+        }
     }
 }

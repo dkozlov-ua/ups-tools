@@ -66,5 +66,5 @@ so neither an update nor an uninstall touches them.
 ## Uninstalling
 
 `& "$env:LOCALAPPDATA\Programs\UpsTools\install.ps1" -Uninstall` exits the app, deletes
-the installed files, the shortcut and the *Start with Windows* entry, and keeps
-`%APPDATA%\UpsTools`.
+the installed files, the shortcut, the *Start with Windows* entry and the notification
+registration and images (`%LOCALAPPDATA%\UpsTools`), and keeps `%APPDATA%\UpsTools`.

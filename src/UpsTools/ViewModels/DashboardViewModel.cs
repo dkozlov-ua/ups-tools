@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using UpsTools.Core;
 using UpsTools.Services;
 
@@ -162,9 +161,7 @@ public sealed class DashboardViewModel : ObservableObject
         (OutputValue, OutputDetail) = ("—", "");
     }
 
-    internal static string Watts(double? w) => w is { } v ? $"{v.ToString("0", CultureInfo.CurrentCulture)} W" : "—";
+    internal static string Watts(double? w) => UpsFormat.Watts(w);
 
-    internal static string Duration(TimeSpan t) => t.TotalHours >= 1
-        ? $"{(int)t.TotalHours} h {t.Minutes:00} m"
-        : $"{Math.Max(0, (int)t.TotalMinutes)} m";
+    internal static string Duration(TimeSpan t) => UpsFormat.Duration(t);
 }

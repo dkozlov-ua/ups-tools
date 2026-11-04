@@ -8,7 +8,10 @@ e.g. pause games and put the NAS to sleep when the grid goes down, and wake the 
 - **Dashboard**: grid status, battery level, charge/discharge rate, estimated time on battery, input and output power, recent activity.
 - **Scripts**: attach any number of scripts to each event. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
   file association; `.ps1` files run hidden through PowerShell. Arguments are optional.
-- **Configuration**: pair the UPS, close to tray, start with Windows, UPS update period.
+- **Notifications**: a Windows notification for each event, e.g. *Grid lost — running on battery: Battery 87 % ·
+  about 6 h 10 m left at 120 W*, naming the scripts it started. *Grid restored* says how long the outage lasted and
+  replaces the *Grid lost* notification; *UPS reachable again* replaces *UPS unreachable*. Clicking one opens the app.
+- **Configuration**: pair the UPS, close to tray, start with Windows, UPS update period, which events notify.
 
 | Event | Fires when |
 |---|---|
@@ -54,6 +57,8 @@ It installs into `%LOCALAPPDATA%\Programs\UpsTools` with a *UPS Tools* Start men
 
 - Configuration → **Find UPS…** → select your UPS → **Pair**.
 - Settings and the log are in `%APPDATA%\UpsTools` (`settings.json`, `ups-tools.log`).
+- Notifications are registered as *UPS Tools* (`HKCU\Software\Classes\AppUserModelId\DKozlov.UpsTools`); their images
+  are in `%LOCALAPPDATA%\UpsTools`. Windows' own settings (Do not disturb, the per-app switch) decide whether they pop up.
 - `UpsTools.exe --background` starts hidden in the tray (used by "Start with Windows").
 - `UpsTools.exe --exit` makes a running copy exit cleanly, e.g. before replacing the exe.
 - Set the environment variable `UPSTOOLS_TRACE=1` to log the Bluetooth protocol exchange for troubleshooting.

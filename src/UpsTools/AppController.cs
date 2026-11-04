@@ -15,6 +15,8 @@ public sealed class AppController
     private readonly ScriptRunner _scripts;
     private UpsMonitor? _monitor;
     private TrayIcon? _tray;
+    private Notifier? _notifier;
+    private DateTimeOffset? _gridLostAt;
 
     public AppController(Dispatcher ui)
     {
@@ -49,9 +51,10 @@ public sealed class AppController
 
     public void Save() => _store.Save(Settings);
 
-    public void AttachTray(TrayIcon tray)
+    public void AttachTray(TrayIcon tray, Notifier notifier)
     {
         _tray = tray;
+        _notifier = notifier;
         UpdateTray();
     }
 
@@ -114,6 +117,7 @@ public sealed class AppController
     {
         var monitor = _monitor;
         _monitor = null;
+        _gridLostAt = null;
         if (monitor is not null) await monitor.DisposeAsync();
     }
 
@@ -139,18 +143,28 @@ public sealed class AppController
         if (old is not null) Log.Info($"Forgot {old.Name}");
     }
 
-    public void RunScripts(EventScriptsViewModel group, string reason)
+    /// <returns>File names of the scripts that were started and of those that could not be.</returns>
+    public (List<string> Started, List<string> Failed) RunScripts(EventScriptsViewModel group, string reason)
     {
         var actions = group.EnabledActions.ToList();
-        if (actions.Count == 0)
-        {
-            Log.Info($"{reason}: no scripts to run");
-            return;
-        }
-        foreach (var action in actions) _scripts.Run(action, reason);
+        if (actions.Count == 0) Log.Info($"{reason}: no scripts to run");
+
+        List<string> started = [], failed = [];
+        foreach (var action in actions)
+            (_scripts.Run(action, reason) ? started : failed).Add(System.IO.Path.GetFileName(action.Path));
+        return (started, failed);
     }
 
     public void RunScript(ScriptAction action, string reason) => _scripts.Run(action, reason);
+
+    public void SendTestNotification()
+    {
+        _notifier?.Show("test", TrayState.GridOnline, "Test notification",
+            "This is how UPS Tools tells you that the grid went down or came back.", attribution: DeviceTitle);
+        Log.Info("Sent a test notification");
+    }
+
+    private string? DeviceTitle => Settings.Ups is { } ups ? $"Bluetti {ups.Model}" : null;
 
     public void OnResumedFromSleep()
     {
@@ -162,21 +176,23 @@ public sealed class AppController
     {
         Log.Event(kind.Title());
 
-        var battery = status?.BatteryPercent is { } soc ? $" Battery at {soc} %." : "";
-        switch (kind)
+        TimeSpan? outage = null;
+        var at = status?.Timestamp ?? DateTimeOffset.Now;
+        if (kind == UpsEventKind.GridLost)
         {
-            case UpsEventKind.GridLost:
-                _tray?.Notify("Grid lost", $"The UPS is running on battery.{battery}", warning: true);
-                break;
-            case UpsEventKind.GridRestored:
-                _tray?.Notify("Grid restored", $"Mains power is back.{battery}");
-                break;
-            case UpsEventKind.UpsUnreachable:
-                _tray?.Notify("UPS unreachable", "The UPS stopped answering over Bluetooth.", warning: true);
-                break;
+            _gridLostAt = at;
+        }
+        else if (kind == UpsEventKind.GridRestored)
+        {
+            if (_gridLostAt is { } lost) outage = at - lost;
+            _gridLostAt = null;
         }
 
-        RunScripts(EventScripts.First(g => g.Kind == kind), kind.Title());
+        var (started, failed) = RunScripts(EventScripts.First(g => g.Kind == kind), kind.Title());
+
+        // "UPS unreachable" comes without a reading; the last good one says when the UPS last answered.
+        if (Settings.NotifyOn(kind))
+            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, started, failed), DeviceTitle);
     }
 
     private void UpdateTray()

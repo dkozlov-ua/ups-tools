@@ -6,13 +6,14 @@ namespace UpsTools.Services;
 /// <summary>Starts user scripts. Scripts run detached; the app does not wait for them.</summary>
 public sealed class ScriptRunner(AppLog log)
 {
-    public void Run(ScriptAction action, string reason)
+    /// <returns>Whether the script was started.</returns>
+    public bool Run(ScriptAction action, string reason)
     {
         var path = action.Path;
         if (!File.Exists(path))
         {
             log.Warn($"{reason}: script not found: {path}");
-            return;
+            return false;
         }
 
         try
@@ -31,10 +32,12 @@ public sealed class ScriptRunner(AppLog log)
             psi.WorkingDirectory = Path.GetDirectoryName(path) ?? "";
             using var process = Process.Start(psi);
             log.Info($"{reason}: started {Path.GetFileName(path)}");
+            return true;
         }
         catch (Exception ex)
         {
             log.Warn($"{reason}: failed to start {Path.GetFileName(path)}: {ex.Message}");
+            return false;
         }
     }
 }

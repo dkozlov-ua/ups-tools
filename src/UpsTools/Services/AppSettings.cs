@@ -15,6 +15,11 @@ public sealed class AppSettings
     public int UpdatePeriodSeconds { get; set; } = 10;
     public Dictionary<UpsEventKind, List<ScriptAction>> Scripts { get; set; } = [];
 
+    /// <summary>Which events show a Windows notification. Events not listed do.</summary>
+    public Dictionary<UpsEventKind, bool> Notifications { get; set; } = [];
+
+    public bool NotifyOn(UpsEventKind kind) => !Notifications.TryGetValue(kind, out var on) || on;
+
     public List<ScriptAction> ScriptsFor(UpsEventKind kind)
     {
         if (!Scripts.TryGetValue(kind, out var list)) Scripts[kind] = list = [];

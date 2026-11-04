@@ -66,6 +66,35 @@
                 </StackPanel>
             </Border>
 
+            <!-- Notifications -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Notifications" Style="{StaticResource CardTitle}" />
+                    <TextBlock Style="{StaticResource Detail}" Margin="0,2,0,10"
+                               Text="Show a Windows notification when these events happen. A newer notification replaces the older one about the same thing: &quot;Grid restored&quot; replaces &quot;Grid lost&quot;." />
+
+                    <ItemsControl ItemsSource="{Binding Notifications}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="2" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsEnabled}" Content="{Binding Title}" Margin="0,0,12,6" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button Content="Send test notification" Click="TestNotification_Click" Margin="0,0,8,0" />
+                        <Button Content="Windows notification settings" Click="WindowsNotificationSettings_Click" />
+                    </WrapPanel>
+                    <TextBlock Style="{StaticResource Detail}" Margin="0,8,0,0"
+                               Text="Windows decides whether they pop up: Do not disturb, focus sessions and the per-app switch for UPS Tools in Windows notification settings can hide them." />
+                </StackPanel>
+            </Border>
+
             <!-- About -->
             <Border Style="{StaticResource Card}">
                 <DockPanel>

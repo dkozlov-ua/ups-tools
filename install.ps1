@@ -25,9 +25,10 @@
 
       install.ps1 -Uninstall [-InstallDir <dir>]
 
-      Deletes the package's own files, the shortcut, and the Start with Windows
-      entry when it starts this installation. The settings and the log in
-      %APPDATA%\UpsTools are the user's and are left.
+      Deletes the package's own files, the shortcut, the Start with Windows
+      entry when it starts this installation, and the app's notification
+      registration and images (%LOCALAPPDATA%\UpsTools). The settings and the
+      log in %APPDATA%\UpsTools are the user's and are left.
 
     A RUNNING UPS TOOLS. The exe cannot be replaced while it runs, so a copy
     running from the target folder is asked to exit (the same signal as
@@ -87,6 +88,8 @@ $LogFile    = Join-Path $env:APPDATA 'UpsTools\ups-tools.log'
 $ExitEvent  = 'Local\UpsTools.Exit'        # App.xaml.cs: what "UpsTools.exe --exit" sets
 $RunKey     = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $RunValue   = 'UpsTools'                   # StartupRegistration.cs
+$NotifyKey  = 'HKCU:\Software\Classes\AppUserModelId\DKozlov.UpsTools'   # Notifier.cs
+$NotifyCache = Join-Path $env:LOCALAPPDATA 'UpsTools'                    # Notifier.CacheFolder
 
 # ---- saying things ---------------------------------------------------------
 # One line in the app's log, in AppLog's format, retried on a sharing violation.
@@ -240,6 +243,18 @@ function Invoke-Uninstall() {
     if ($run -and $run.IndexOf("$target\$ExeName", [StringComparison]::OrdinalIgnoreCase) -ge 0) {
         Remove-ItemProperty -Path $RunKey -Name $RunValue
         Log 'removed the Start with Windows entry'
+    }
+
+    # Notifications: the app's registration and the images its notifications show.
+    # Both are re-created by the app on its next notification.
+    if (Test-Path -LiteralPath $NotifyKey) {
+        Remove-Item -LiteralPath $NotifyKey -Recurse -Force
+        Log 'removed the notification registration'
+    }
+    if (Test-Path -LiteralPath $NotifyCache) {
+        Get-ChildItem -LiteralPath $NotifyCache -File -Filter '*.png' | Where-Object { $_.Name -eq 'app.png' -or $_.Name -like 'logo-*.png' } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        if (-not (Get-ChildItem -LiteralPath $NotifyCache -Force)) { Remove-Item -LiteralPath $NotifyCache -Force }
     }
 
     Say "uninstalled UPS Tools from $target"

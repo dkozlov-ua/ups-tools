@@ -18,6 +18,7 @@ public partial class App : Application
     private EventWaitHandle? _exitSignal;
     private AppController? _controller;
     private TrayIcon? _tray;
+    private Notifier? _notifier;
     private MainWindow? _window;
     private bool _exiting;
     private bool _trayHintShown;
@@ -52,7 +53,8 @@ public partial class App : Application
         try { StartupRegistration.RefreshPathIfEnabled(); } catch { /* not critical */ }
 
         _tray = new TrayIcon(ShowMainWindow, () => _ = ExitAsync());
-        _controller.AttachTray(_tray);
+        _notifier = new Notifier(_controller.Log, _tray, () => Dispatcher.InvokeAsync(ShowMainWindow));
+        _controller.AttachTray(_tray, _notifier);
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
         _controller.Log.Info($"UPS Tools started ({_controller.Configuration.Version})");
@@ -111,7 +113,8 @@ public partial class App : Application
         if (!_trayHintShown)
         {
             _trayHintShown = true;
-            _tray?.Notify("UPS Tools is still running", "It keeps watching your UPS from the notification area. Right-click the icon to exit.");
+            _notifier?.Show("tray-hint", TrayState.Neutral, "UPS Tools is still running",
+                "It keeps watching your UPS from the notification area. Right-click the icon to exit.");
         }
     }
 
