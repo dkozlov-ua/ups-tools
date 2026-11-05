@@ -57,13 +57,15 @@ public class UpsMonitorTests
     private readonly ConcurrentQueue<UpsStatus> _statuses = new();
     private readonly ConcurrentQueue<(UpsEventKind Kind, UpsStatus? Status)> _events = new();
     private readonly ConcurrentQueue<UpsLinkState> _states = new();
+    private readonly ConcurrentQueue<UpsEvent> _raised = new();
     private readonly ConcurrentQueue<string> _log = new();
 
     private UpsMonitor Start(TimeSpan? period = null, TimeSpan? readTimeout = null)
     {
         var monitor = new UpsMonitor(_ups, period ?? TimeSpan.Zero, readTimeout);
         monitor.StatusUpdated += _statuses.Enqueue;
-        monitor.EventRaised += (kind, status) => _events.Enqueue((kind, status));
+        monitor.EventRaised += e => _events.Enqueue((e.Kind, e.Status));
+        monitor.EventRaised += _raised.Enqueue;
         monitor.LinkStateChanged += _states.Enqueue;
         monitor.Log += _log.Enqueue;
         monitor.Start();
@@ -112,6 +114,56 @@ public class UpsMonitorTests
 
         Assert.Equal([UpsEventKind.GridLost, UpsEventKind.BatteryLow], _events.Select(e => e.Kind));
         Assert.Equal(50, _events.Last().Status!.BatteryPercent);
+    }
+
+    [Fact]
+    public async Task Waiting_out_a_grid_loss_it_polls_again_when_grid_lost_is_due()
+    {
+        await using var monitor = Start(TimeSpan.FromMinutes(10));
+        monitor.Rules = new EventRules(GridLostDelaySeconds: 1);
+        _ups.Answer(true);
+        await Wait.Until(() => _statuses.Count == 1);
+        monitor.PollNow();
+        _ups.Answer(false);
+        await Wait.Until(() => _statuses.Count == 2);
+        Assert.Empty(_events);
+        Assert.Contains("The grid is gone; Grid lost fires if it stays gone for 1 s", _log);
+
+        _ups.Answer(false); // read about a second later, not in 10 minutes
+        await Wait.Until(() => !_events.IsEmpty, seconds: 5);
+
+        var lost = Assert.Single(_raised);
+        Assert.Equal(UpsEventKind.GridLost, lost.Kind);
+        Assert.Equal(_statuses.ElementAt(1).Timestamp, lost.GridGoneSince);
+        Assert.True(lost.Status!.Timestamp - lost.GridGoneSince >= TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task A_blip_shorter_than_the_delay_is_only_logged()
+    {
+        await using var monitor = Start();
+        monitor.Rules = new EventRules(GridLostDelaySeconds: 600);
+        _ups.Answer(true);
+        _ups.Answer(false);
+        _ups.Answer(true);
+        await Wait.Until(() => _statuses.Count == 3);
+
+        Assert.Empty(_events);
+        Assert.Matches(@"^The grid came back after \d+ s, before Grid lost was due$", _log.Last());
+    }
+
+    [Fact]
+    public async Task Without_a_delay_other_events_carry_no_start_time()
+    {
+        await using var monitor = Start();
+        _ups.Answer(true);
+        _ups.Answer(false);
+        _ups.Answer(true);
+        await Wait.Until(() => _statuses.Count == 3);
+        Assert.Equal([UpsEventKind.GridLost, UpsEventKind.GridRestored], _raised.Select(e => e.Kind));
+        Assert.Equal(_statuses.ElementAt(1).Timestamp, _raised.First().GridGoneSince);
+        Assert.Null(_raised.Last().GridGoneSince);
+        Assert.Empty(_log);
     }
 
     [Fact]

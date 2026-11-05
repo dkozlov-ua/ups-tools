@@ -57,7 +57,7 @@ public sealed class SettingsAndLogTests : IDisposable
         Assert.Null(settings.Ups);
         Assert.True(settings.CloseToTray);
         Assert.Equal(10, settings.UpdatePeriodSeconds);
-        Assert.Equal(new EventRules(20, 10), settings.Rules());
+        Assert.Equal(new EventRules(20, 10, 0), settings.Rules());
         Assert.Empty(settings.Scripts);
         Assert.All(Enum.GetValues<UpsEventKind>(), kind => Assert.True(settings.NotifyOn(kind)));
         Assert.Empty(_log.Recent);
@@ -73,6 +73,7 @@ public sealed class SettingsAndLogTests : IDisposable
             UpdatePeriodSeconds = 30,
             BatteryLowPercent = 35,
             BatteryLowMinutes = 0,
+            GridLostDelaySeconds = 15,
             Notifications = { [UpsEventKind.UpsReachable] = false },
         };
         settings.ScriptsFor(UpsEventKind.GridLost).Add(new ScriptAction
@@ -89,7 +90,7 @@ public sealed class SettingsAndLogTests : IDisposable
         Assert.Equal(settings.Ups, loaded.Ups);
         Assert.False(loaded.CloseToTray);
         Assert.Equal(30, loaded.UpdatePeriodSeconds);
-        Assert.Equal(new EventRules(35, 0), loaded.Rules());
+        Assert.Equal(new EventRules(35, 0, 15), loaded.Rules());
         Assert.False(loaded.NotifyOn(UpsEventKind.UpsReachable));
         Assert.True(loaded.NotifyOn(UpsEventKind.GridLost));
         var script = Assert.Single(loaded.ScriptsFor(UpsEventKind.GridLost));
@@ -133,6 +134,16 @@ public sealed class SettingsAndLogTests : IDisposable
     {
         _store.Save(new AppSettings { BatteryLowPercent = percent, BatteryLowMinutes = minutes });
         Assert.Equal(new EventRules(loadedPercent, loadedMinutes), _store.Load().Rules());
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(601, 600)]
+    [InlineData(20, 20)]
+    public void The_grid_lost_delay_is_clamped_on_load(int saved, int loaded)
+    {
+        _store.Save(new AppSettings { GridLostDelaySeconds = saved });
+        Assert.Equal(loaded, _store.Load().GridLostDelaySeconds);
     }
 
     [Fact]
@@ -267,7 +278,7 @@ public sealed class SettingsAndLogTests : IDisposable
     {
         _store.Save(new AppSettings());
         using var doc = JsonDocument.Parse(File.ReadAllText(_store.FilePath));
-        Assert.Equal(["Ups", "CloseToTray", "UpdatePeriodSeconds", "BatteryLowPercent", "BatteryLowMinutes", "Scripts", "Notifications"],
+        Assert.Equal(["Ups", "CloseToTray", "UpdatePeriodSeconds", "BatteryLowPercent", "BatteryLowMinutes", "GridLostDelaySeconds", "Scripts", "Notifications"],
             doc.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Contains("\n  \"CloseToTray\"", File.ReadAllText(_store.FilePath));
     }

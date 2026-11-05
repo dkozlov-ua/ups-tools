@@ -194,7 +194,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
         Assert.True(_vm.CloseToTray);
         Assert.False(_vm.StartWithWindows);
         Assert.Equal("10", _vm.UpdatePeriod.Text);
-        Assert.Equal(("20", "10"), (_vm.BatteryLowPercent.Text, _vm.BatteryLowMinutes.Text));
+        Assert.Equal(("20", "10", "0"), (_vm.BatteryLowPercent.Text, _vm.BatteryLowMinutes.Text, _vm.GridLostDelay.Text));
         Assert.Matches(@"^Version \d+\.\d+\.\d+$", _vm.Version);
         Assert.Equal(["Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again"], _vm.Notifications.Select(n => n.Title));
         Assert.Equal(0, _saves);
@@ -279,6 +279,19 @@ public sealed class ConfigurationViewModelTests : IDisposable
         _vm.BatteryLowPercent.Normalize();
         Assert.Equal(percent.ToString(), _vm.BatteryLowPercent.Text);
         Assert.Equal((0, 99, percent), (_vm.BatteryLowPercent.Min, _vm.BatteryLowPercent.Max, _vm.BatteryLowPercent.Value));
+    }
+
+    [Theory]
+    [InlineData("30", 30)]
+    [InlineData("1", 1)]
+    [InlineData("1000", 600)]
+    public void The_grid_lost_delay_applies_clamped(string text, int seconds)
+    {
+        _vm.GridLostDelay.Text = text;
+        Assert.Equal(seconds, _settings.GridLostDelaySeconds);
+        Assert.Equal((1, 1), (_saves, _monitorChanges));
+        _vm.GridLostDelay.Normalize();
+        Assert.Equal(seconds.ToString(), _vm.GridLostDelay.Text);
     }
 
     [Theory]

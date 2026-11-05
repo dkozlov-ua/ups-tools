@@ -1,5 +1,10 @@
 namespace UpsTools.Core;
 
+/// <summary>An event as the monitor raises it.</summary>
+/// <param name="Status">The reading that raised it; null for "UPS unreachable".</param>
+/// <param name="GridGoneSince">For "Grid lost": when the grid went, which is earlier than the reading with a delay.</param>
+public sealed record UpsEvent(UpsEventKind Kind, UpsStatus? Status, DateTimeOffset? GridGoneSince = null);
+
 public enum UpsLinkState
 {
     Connecting,
@@ -15,6 +20,7 @@ public enum UpsLinkState
 public sealed class UpsMonitor : IAsyncDisposable
 {
     private static readonly TimeSpan DefaultReadTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DueMargin = TimeSpan.FromMilliseconds(50);
 
     private readonly IUpsConnection _connection;
     private readonly TimeSpan _readTimeout;
@@ -34,7 +40,7 @@ public sealed class UpsMonitor : IAsyncDisposable
     }
 
     public event Action<UpsStatus>? StatusUpdated;
-    public event Action<UpsEventKind, UpsStatus?>? EventRaised;
+    public event Action<UpsEvent>? EventRaised;
     public event Action<UpsLinkState>? LinkStateChanged;
     public event Action<string>? Log;
 
@@ -77,11 +83,19 @@ public sealed class UpsMonitor : IAsyncDisposable
         {
             await PollOnceAsync();
 
+            // Waiting out a grid loss: look again when "Grid lost" would be due (a little after: timers can fire early).
+            var wait = _period;
+            if (_tracker.GridLostDue is { } due && LastStatus is { } last)
+            {
+                var left = due - last.Timestamp + DueMargin;
+                if (left < wait) wait = left > TimeSpan.Zero ? left : TimeSpan.Zero;
+            }
+
             if (!_wake.TryReset()) _wake = new CancellationTokenSource();
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, _wake.Token);
             try
             {
-                await Task.Delay(_period, linked.Token);
+                await Task.Delay(wait, linked.Token);
             }
             catch (OperationCanceledException)
             {
@@ -101,7 +115,12 @@ public sealed class UpsMonitor : IAsyncDisposable
             status = await _connection.ReadAsync(timeout.Token);
             LastStatus = status;
             _lastError = null;
+            var waiting = _tracker.GridLostDue is not null;
             events = _tracker.OnSuccess(status);
+            if (!waiting && _tracker.GridLostDue is not null)
+                Log?.Invoke($"The grid is gone; Grid lost fires if it stays gone for {_tracker.Rules.GridLostDelaySeconds} s");
+            if (_tracker.IgnoredGridLoss is { } blip)
+                Log?.Invoke($"The grid came back after {Math.Round(blip.TotalSeconds)} s, before Grid lost was due");
             SetLinkState(UpsLinkState.Online);
             StatusUpdated?.Invoke(status);
         }
@@ -120,7 +139,8 @@ public sealed class UpsMonitor : IAsyncDisposable
             return; // Shutting down.
         }
 
-        foreach (var kind in events) EventRaised?.Invoke(kind, status);
+        foreach (var kind in events)
+            EventRaised?.Invoke(new UpsEvent(kind, status, kind == UpsEventKind.GridLost ? _tracker.GridGoneSince : null));
     }
 
     private void SetLinkState(UpsLinkState state)

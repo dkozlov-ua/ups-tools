@@ -76,6 +76,28 @@ public sealed class DashboardUiTests : IDisposable
     }
 
     [Fact]
+    public void With_a_wait_before_grid_lost_a_blip_runs_nothing()
+    {
+        var lost = _app.Script("lost.ps1");
+        _app.Seed(s =>
+        {
+            s["GridLostDelaySeconds"] = 5;
+            s["Scripts"]!["GridLost"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["Path"] = lost });
+        });
+        var window = _app.Start()!;
+        window.HasText("GridValue", "Online");
+
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 80, AcInputW = 0, AcOutputW = 120 });
+        Ui.Until(() => _app.Log().Contains("The grid is gone; Grid lost fires if it stays gone for 5 s"), "the wait");
+        _app.Simulate(new { GridPresent = true, BatteryPercent = 80, AcInputW = 150, AcOutputW = 120 });
+        Ui.Until(() => _app.Log().Contains("before Grid lost was due"), "the blip to be logged");
+        Assert.Equal(0, _app.Runs("lost.ps1"));
+
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 80, AcInputW = 0, AcOutputW = 120 });
+        Ui.Until(() => _app.Runs("lost.ps1") == 1, "Grid lost after the wait", TimeSpan.FromSeconds(20));
+    }
+
+    [Fact]
     public void Scripts_are_told_the_event_and_the_ups_state()
     {
         var script = _app.WriteFile("env.ps1", """

@@ -79,6 +79,20 @@ public sealed class ConfigurationUiTests : IDisposable
     }
 
     [Fact]
+    public void The_wait_before_grid_lost_is_saved()
+    {
+        _app.Seed();
+        _app.Start();
+        var window = _app.Tab("Configuration");
+
+        var delay = window.ByName("Wait before Grid lost in seconds");
+        Assert.Equal("0", delay.Value());
+        delay.SetFocus();
+        delay.SetValue("90");
+        Ui.Until(() => (int)_app.Settings()["GridLostDelaySeconds"]! == 90, "the delay to be saved");
+    }
+
+    [Fact]
     public void Start_with_windows_adds_and_removes_the_run_entry()
     {
         _app.Seed();

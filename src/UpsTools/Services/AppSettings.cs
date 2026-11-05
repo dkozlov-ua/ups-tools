@@ -11,6 +11,7 @@ public sealed class AppSettings
     public const int MaxUpdatePeriodSeconds = 600;
     public const int MaxBatteryLowPercent = 99;
     public const int MaxBatteryLowMinutes = 600;
+    public const int MaxGridLostDelaySeconds = 600;
 
     public PairedUps? Ups { get; set; }
     public bool CloseToTray { get; set; } = true;
@@ -22,7 +23,10 @@ public sealed class AppSettings
     /// <summary>"Battery low" at or below this many minutes left, on battery; 0: never.</summary>
     public int BatteryLowMinutes { get; set; } = 10;
 
-    public EventRules Rules() => new(BatteryLowPercent, BatteryLowMinutes);
+    /// <summary>"Grid lost" only once the grid has been gone this long; 0: at once.</summary>
+    public int GridLostDelaySeconds { get; set; }
+
+    public EventRules Rules() => new(BatteryLowPercent, BatteryLowMinutes, GridLostDelaySeconds);
     public Dictionary<UpsEventKind, List<ScriptAction>> Scripts { get; set; } = [];
 
     /// <summary>Which events show a Windows notification. Events not listed do.</summary>
@@ -94,6 +98,7 @@ public sealed class SettingsStore(AppLog log, string? folder = null)
                 AppSettings.MinUpdatePeriodSeconds, AppSettings.MaxUpdatePeriodSeconds);
             settings.BatteryLowPercent = Math.Clamp(settings.BatteryLowPercent, 0, AppSettings.MaxBatteryLowPercent);
             settings.BatteryLowMinutes = Math.Clamp(settings.BatteryLowMinutes, 0, AppSettings.MaxBatteryLowMinutes);
+            settings.GridLostDelaySeconds = Math.Clamp(settings.GridLostDelaySeconds, 0, AppSettings.MaxGridLostDelaySeconds);
             return settings;
         }
         catch (Exception ex)

@@ -324,6 +324,45 @@ public sealed class AppControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task With_a_delay_a_blip_runs_nothing_and_a_real_outage_counts_from_its_start()
+    {
+        var controller = await Start(s =>
+        {
+            s.GridLostDelaySeconds = 30;
+            s.ScriptsFor(UpsEventKind.GridLost).Add(Script("lost.ps1"));
+        });
+        Assert.Equal(30, controller.Monitor!.Rules.GridLostDelaySeconds);
+        var t0 = DateTimeOffset.Now;
+        await Online(at: t0);
+
+        _ups.Answer(false, 80, t0.AddSeconds(10));
+        _ups.Answer(true, 80, t0.AddSeconds(15));
+        await UiUntil(() => _log.Recent.Any(e => e.Message == "The grid came back after 5 s, before Grid lost was due"), "the blip");
+        Assert.Contains(_log.Recent, e => e.Message == "The grid is gone; Grid lost fires if it stays gone for 30 s");
+
+        _ups.Answer(false, 80, t0.AddMinutes(1));
+        _ups.Answer(false, 79, t0.AddMinutes(1.25));
+        Assert.Empty(_notes.All);
+        _ups.Answer(false, 78, t0.AddMinutes(1.5));
+        await UiUntil(() => _notes.All.Count == 1, "Grid lost");
+        Assert.Equal(["lost.ps1"], _scripts.Names);
+        Assert.Equal("30", _scripts.Variables["lost.ps1"]["UPS_OUTAGE_SECONDS"]); // counted from the first reading without the grid
+
+        _ups.Answer(true, 78, t0.AddMinutes(13));
+        await UiUntil(() => _notes.All.Count == 2, "Grid restored");
+        Assert.Equal("Power is back after 12 m on battery. Battery 78 %.", _notes.Notices[1].Body);
+    }
+
+    [Fact]
+    public async Task A_new_grid_lost_delay_reaches_the_monitor_and_is_saved()
+    {
+        var controller = await Start();
+        await UiThread.Run(() => controller.Configuration.GridLostDelay.Text = "45");
+        Assert.Equal(new EventRules(20, 10, 45), controller.Monitor!.Rules);
+        Assert.Contains("\"GridLostDelaySeconds\": 45", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
+    }
+
+    [Fact]
     public async Task New_battery_low_limits_reach_the_monitor_and_are_saved()
     {
         var controller = await Start(s => s.BatteryLowMinutes = 0);

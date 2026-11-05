@@ -122,9 +122,9 @@ public sealed class AppController
             });
             UpdateTray();
         });
-        monitor.EventRaised += (kind, status) => _ui.InvokeAsync(() =>
+        monitor.EventRaised += e => _ui.InvokeAsync(() =>
         {
-            if (_monitor == monitor) OnUpsEvent(kind, status);
+            if (_monitor == monitor) OnUpsEvent(e.Kind, e.Status, e.GridGoneSince);
         });
 
         _monitor = monitor;
@@ -268,7 +268,8 @@ public sealed class AppController
         _monitor?.NotifyResumed();
     }
 
-    internal void OnUpsEvent(UpsEventKind kind, UpsStatus? status)
+    /// <param name="gridGoneSince">For "Grid lost": when the grid went, if earlier than the reading (a delay was waited out).</param>
+    internal void OnUpsEvent(UpsEventKind kind, UpsStatus? status, DateTimeOffset? gridGoneSince = null)
     {
         Log.Event(kind.Title());
 
@@ -276,7 +277,7 @@ public sealed class AppController
         var at = status?.Timestamp ?? DateTimeOffset.Now;
         if (kind == UpsEventKind.GridLost)
         {
-            _gridLostAt = at;
+            _gridLostAt = gridGoneSince ?? at;
         }
         else if (kind == UpsEventKind.GridRestored)
         {
