@@ -51,14 +51,10 @@ over Wi-Fi.
 
 ## Install
 
-Download `UpsTools-X.Y.Z.zip` from [Releases](https://github.com/dkozlov-ua/ups-tools/releases), unzip it, and run
-
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1 -Launch
-```
-
-It installs into `%LOCALAPPDATA%\Programs\UpsTools` with a *UPS Tools* Start menu shortcut. Running a newer package's
-`install.ps1` updates that folder in place; `install.ps1 -Uninstall` removes it. See [RELEASE.md](RELEASE.md).
+Download `UpsTools-X.Y.Z-setup.exe` from [Releases](https://github.com/dkozlov-ua/ups-tools/releases) and run it. It
+installs into `%LOCALAPPDATA%\Programs\UpsTools` without administrator rights, with a *UPS Tools* Start menu shortcut.
+Running a newer setup updates that folder in place; uninstall it from Settings → Apps → *Installed apps*. The setup isn't
+signed, so SmartScreen may ask you to confirm (*More info* → *Run anyway*). See [RELEASE.md](RELEASE.md).
 
 ## Usage
 
@@ -69,7 +65,10 @@ It installs into `%LOCALAPPDATA%\Programs\UpsTools` with a *UPS Tools* Start men
 - `UpsTools.exe --background` starts hidden in the tray (used by "Start with Windows").
 - `UpsTools.exe --run-script "<path>" [arguments]` runs a script and exits with its exit code (used by the administrator
   tasks).
-- `UpsTools.exe --exit` makes a running copy exit cleanly, e.g. before replacing the exe.
+- `UpsTools.exe --exit` makes a running copy exit cleanly and waits for it (up to 30 s; exit code 1 if it is still
+  running), e.g. before replacing the exe.
+- `UpsTools.exe --uninstall` exits a running copy and removes what the app created outside its folder (used by the
+  uninstaller; see [RELEASE.md](RELEASE.md#what-the-setup-does)).
 - Set the environment variable `UPSTOOLS_TRACE=1` to log the Bluetooth protocol exchange for troubleshooting.
 
 ### Scripts that run as administrator
@@ -86,7 +85,7 @@ The task runs on battery power too.
 - Anything running under your account can edit a script set to run as administrator, or UPS Tools itself, and have
   it run elevated without a prompt. Keep those scripts in a folder only administrators can write to,
   e.g. under `C:\Program Files`, if that matters to you.
-- `install.ps1 -Uninstall` deletes the tasks; that asks for administrator rights once.
+- Uninstalling UPS Tools deletes the tasks; that asks for administrator rights once.
 
 ## Development
 
@@ -103,6 +102,7 @@ dotnet run --project src/UpsTools
 | `tests/UpsTools.Tests` | Protocol tests against reference vectors and a real Elite 100 V2 register dump |
 | `tools/make-icon.cs` | Regenerates `app.ico`: `dotnet run tools/make-icon.cs` |
 | `VERSION` | The only version, `X.Y.Z` |
-| `package.ps1`, `publish.ps1`, `install.ps1` | Release package, GitHub release, installer: see [RELEASE.md](RELEASE.md) |
+| `installer/UpsTools.iss` | The Inno Setup script for the setup |
+| `package.ps1`, `publish.ps1` | Build the setup, publish a GitHub release: see [RELEASE.md](RELEASE.md) |
 
 To support another manufacturer, implement `IUpsDriver` / `IUpsConnection` and register it in `UpsDrivers`.

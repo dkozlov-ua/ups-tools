@@ -5,5 +5,5 @@ obj/
 *.user
 TestResults/
 
-# package.ps1's output: the staged package and its zip (see RELEASE.md)
+# package.ps1's output: the setup (see RELEASE.md)
 Releases/

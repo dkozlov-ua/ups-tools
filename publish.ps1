@@ -5,7 +5,7 @@
       powershell -File publish.ps1 -Version 1.2.0   must still match VERSION
 
     The release is the repository's LATEST release (not a draft, not a
-    prerelease), tagged vX.Y.Z, carrying UpsTools-X.Y.Z.zip. The notes are
+    prerelease), tagged vX.Y.Z, carrying UpsTools-X.Y.Z-setup.exe. The notes are
     docs\release-notes\vX.Y.Z.md. See RELEASE.md for the whole runbook.
 
     It refuses - before building anything - unless:
@@ -79,23 +79,23 @@ if ($LASTEXITCODE -eq 0) { throw "release $tag already exists on $repo" }
 
 # ---- build ------------------------------------------------------------------
 & (Join-Path $RepoRoot 'package.ps1') -Version $Version
-$zip = Join-Path $RepoRoot "Releases\UpsTools-$Version.zip"
-$sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+$setup = Join-Path $RepoRoot "Releases\UpsTools-$Version-setup.exe"
+$sha256 = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
 
 # ---- publish ----------------------------------------------------------------
 Write-Host "--- Publishing $tag to $repo at $($sha.Substring(0, 7)) ---"
-& gh release create $tag $zip --repo $repo --target $sha --title "UPS Tools $Version" --notes-file $notes --latest
+& gh release create $tag $setup --repo $repo --target $sha --title "UPS Tools $Version" --notes-file $notes --latest
 if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
 Invoke-Git fetch --quiet origin --tags | Out-Null
 
-# GitHub's own digest of the asset must be the zip that was built.
+# GitHub's own digest of the asset must be the setup that was built.
 # Filtered here, not with -q: Windows PowerShell 5.1 strips the double quotes
-# inside a native argument, so a jq filter naming ".zip" reaches gh as .zip and
+# inside a native argument, so a jq filter naming ".exe" reaches gh as .exe and
 # fails ("expected an object but got: string").
 $assets = (& gh release view $tag --repo $repo --json assets) | ConvertFrom-Json
-$digest = @($assets.assets | Where-Object { $_.name -like '*.zip' } | ForEach-Object { $_.digest })[0]
+$digest = @($assets.assets | Where-Object { $_.name -like '*-setup.exe' } | ForEach-Object { $_.digest })[0]
 if ($digest -ne "sha256:$sha256") {
-    Write-Warning "GitHub reports the asset as '$digest', but the zip built here is sha256:$sha256"
+    Write-Warning "GitHub reports the asset as '$digest', but the setup built here is sha256:$sha256"
     exit 1
 }
 Write-Host "`nPublished UPS Tools ${Version}: https://github.com/$repo/releases/tag/$tag"
