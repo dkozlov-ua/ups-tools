@@ -8,9 +8,10 @@ public static class StartupRegistration
     public const string BackgroundArgument = "--background";
 
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "UpsTools";
+    /// <summary>UpsTools, or UpsTools-name for a profile (<see cref="AppProfile"/>).</summary>
+    public static string ValueName { get; } = "UpsTools" + AppProfile.Suffix;
 
-    private static string Command => $"\"{Environment.ProcessPath}\" {BackgroundArgument}";
+    internal static string Command => $"\"{Environment.ProcessPath}\" {BackgroundArgument}{AppProfile.CommandLine}";
 
     public static bool IsEnabled
     {

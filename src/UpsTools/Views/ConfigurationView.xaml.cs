@@ -40,13 +40,13 @@ public partial class ConfigurationView : UserControl
 
     private void OpenSettingsFolder_Click(object sender, RoutedEventArgs e)
     {
-        Directory.CreateDirectory(SettingsStore.Folder);
-        Open(SettingsStore.Folder);
+        Directory.CreateDirectory(Controller.SettingsFolder);
+        Open(Controller.SettingsFolder);
     }
 
     private void OpenLog_Click(object sender, RoutedEventArgs e)
     {
-        if (File.Exists(AppLog.FilePath)) Open(AppLog.FilePath);
+        if (File.Exists(Controller.Log.FilePath)) Open(Controller.Log.FilePath);
     }
 
     private void TestNotification_Click(object sender, RoutedEventArgs e) => Controller.SendTestNotification();

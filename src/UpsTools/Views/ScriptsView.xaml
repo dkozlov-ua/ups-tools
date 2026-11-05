@@ -19,8 +19,10 @@
                                 <DockPanel>
                                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
                                         <Button Content="Run now" Click="RunEvent_Click" Margin="0,0,8,0"
+                                                AutomationProperties.Name="{Binding Title, StringFormat=Run the {0} scripts now}"
                                                 ToolTip="Run all enabled scripts of this event now" />
-                                        <Button Content="Add script…" Click="AddScript_Click" Style="{DynamicResource AccentButtonStyle}" />
+                                        <Button Content="Add script…" Click="AddScript_Click" Style="{DynamicResource AccentButtonStyle}"
+                                                AutomationProperties.Name="{Binding Title, StringFormat=Add a script to {0}}" />
                                     </StackPanel>
                                     <StackPanel Margin="0,0,12,0">
                                         <TextBlock Text="{Binding Title}" Style="{StaticResource CardTitle}" />
@@ -72,6 +74,7 @@
                                                     </Border>
 
                                                     <CheckBox Grid.Column="1" IsChecked="{Binding Enabled}" VerticalAlignment="Center" MinWidth="0"
+                                                              AutomationProperties.Name="{Binding FileName, StringFormat=Enable {0}}"
                                                               Margin="0,0,4,0" ToolTip="Enabled" />
 
                                                     <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,12,0">
@@ -82,7 +85,7 @@
                                                             <TextBlock x:Name="Shield" FontFamily="{StaticResource IconFont}" Text="&#xEA18;"
                                                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,6,0"
                                                                        Visibility="Collapsed" ToolTip="Runs as administrator" />
-                                                            <TextBlock Text="{Binding FileName}" FontWeight="SemiBold"
+                                                            <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" AutomationProperties.AutomationId="ScriptName"
                                                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding FullPath}" Style="{StaticResource Detail}"
@@ -90,6 +93,7 @@
                                                     </StackPanel>
 
                                                     <TextBox Grid.Column="3" Text="{Binding Arguments, UpdateSourceTrigger=LostFocus}"
+                                                             AutomationProperties.Name="{Binding FileName, StringFormat=Arguments for {0}}"
                                                              VerticalAlignment="Center" ToolTip="Command-line arguments (optional)" />
                                                     <TextBlock Grid.Column="3" Text="Arguments" IsHitTestVisible="False" Margin="12,0,0,0"
                                                                VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorTertiaryBrush}">
@@ -106,15 +110,19 @@
                                                     </TextBlock>
 
                                                     <Button Grid.Column="4" Style="{StaticResource IconButton}" Content="&#xE768;"
-                                                            Click="RunScript_Click" ToolTip="Run this script now" Margin="8,0,0,0" />
+                                                            Click="RunScript_Click" ToolTip="Run this script now" Margin="8,0,0,0"
+                                                            AutomationProperties.Name="{Binding FileName, StringFormat=Run {0} now}" />
                                                     <Button Grid.Column="5" Style="{StaticResource IconButton}" Content="&#xE74D;"
-                                                            Click="RemoveScript_Click" ToolTip="Remove" />
+                                                            Click="RemoveScript_Click" ToolTip="Remove"
+                                                            AutomationProperties.Name="{Binding FileName, StringFormat=Remove {0}}" />
 
                                                     <WrapPanel Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" Margin="0,4,0,0">
                                                         <CheckBox IsChecked="{Binding WaitForExit}" MinWidth="0" Margin="0,0,24,0"
+                                                                  AutomationProperties.Name="{Binding FileName, StringFormat=Wait until {0} finishes}"
                                                                   Content="Wait until it finishes"
                                                                   ToolTip="The next script starts only after this one exits with exit code 0. If it fails (another exit code, or it can't be started), the scripts after it don't run." />
                                                         <CheckBox IsChecked="{Binding RunElevated}" IsEnabled="{Binding IsIdle}" MinWidth="0"
+                                                                  AutomationProperties.Name="{Binding FileName, StringFormat=Run {0} as administrator}"
                                                                   Content="Run as administrator"
                                                                   ToolTip="Runs elevated without a UAC prompt when the event fires, so it works with nobody at the PC. Ticking it asks for administrator rights once, to create a scheduled task (\UpsTools in Task Scheduler) that runs the script." />
                                                     </WrapPanel>
@@ -124,8 +132,10 @@
                                                                 Visibility="{Binding HasElevationNote, Converter={StaticResource BoolToVisibility}}">
                                                         <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE7BA;" VerticalAlignment="Center"
                                                                    Foreground="{DynamicResource SystemFillColorCautionBrush}" Margin="0,0,6,0" />
-                                                        <TextBlock Text="{Binding ElevationNote}" Style="{StaticResource Detail}" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding ElevationNote}" Style="{StaticResource Detail}" VerticalAlignment="Center"
+                                                                   AutomationProperties.AutomationId="ElevationNote" />
                                                         <Button Content="Repair" Click="Repair_Click" Margin="10,0,0,0" Padding="10,2"
+                                                                AutomationProperties.Name="{Binding FileName, StringFormat=Repair {0}}"
                                                                 IsEnabled="{Binding IsIdle}"
                                                                 Visibility="{Binding CanRepair, Converter={StaticResource BoolToVisibility}}"
                                                                 ToolTip="Create the administrator task again (asks for administrator rights)" />

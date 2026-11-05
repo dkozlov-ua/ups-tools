@@ -16,8 +16,8 @@
                         </StackPanel>
                         <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" FontSize="22" Margin="2,0,14,0" Text="&#xE702;" />
                         <StackPanel>
-                            <TextBlock Text="{Binding PairedTitle}" Style="{StaticResource CardTitle}" />
-                            <TextBlock Text="{Binding PairedDetail}" Style="{StaticResource Detail}" Margin="0,2,0,0" />
+                            <TextBlock Text="{Binding PairedTitle}" Style="{StaticResource CardTitle}" AutomationProperties.AutomationId="PairedTitle" />
+                            <TextBlock Text="{Binding PairedDetail}" Style="{StaticResource Detail}" Margin="0,2,0,0" AutomationProperties.AutomationId="PairedDetail" />
                         </StackPanel>
                     </DockPanel>
                     <TextBlock Style="{StaticResource Detail}" Margin="0,10,0,0"
@@ -30,7 +30,7 @@
                 <StackPanel>
                     <TextBlock Text="General" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
 
-                    <CheckBox IsChecked="{Binding CloseToTray}">
+                    <CheckBox IsChecked="{Binding CloseToTray}" AutomationProperties.Name="Close to tray">
                         <StackPanel>
                             <TextBlock Text="Close to tray" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                             <TextBlock Style="{StaticResource Detail}"
@@ -38,7 +38,7 @@
                         </StackPanel>
                     </CheckBox>
 
-                    <CheckBox IsChecked="{Binding StartWithWindows}" Margin="0,10,0,0">
+                    <CheckBox IsChecked="{Binding StartWithWindows}" Margin="0,10,0,0" AutomationProperties.Name="Start with Windows">
                         <StackPanel>
                             <TextBlock Text="Start with Windows" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                             <TextBlock Style="{StaticResource Detail}"
@@ -57,7 +57,7 @@
                                        Text="How often the UPS is polled (2–600 seconds). &quot;UPS unreachable&quot; fires after 3 failed polls in a row." />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                            <TextBox Width="80" HorizontalContentAlignment="Right"
+                            <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="UPS update period in seconds"
                                      Text="{Binding UpdatePeriodText, UpdateSourceTrigger=PropertyChanged}"
                                      LostFocus="UpdatePeriod_LostFocus" />
                             <TextBlock Text="seconds" Style="{StaticResource Caption}" Margin="8,0,0,0" />
@@ -101,7 +101,7 @@
                     <Image DockPanel.Dock="Left" Source="/Assets/app.ico" Width="40" Height="40" Margin="0,0,14,0" VerticalAlignment="Top" />
                     <StackPanel>
                         <TextBlock Text="UPS Tools" Style="{StaticResource CardTitle}" />
-                        <TextBlock Text="{Binding Version}" Style="{StaticResource Detail}" Margin="0,2,0,8" />
+                        <TextBlock Text="{Binding Version}" Style="{StaticResource Detail}" Margin="0,2,0,8" AutomationProperties.AutomationId="Version" />
                         <WrapPanel>
                             <Button Content="Open settings folder" Click="OpenSettingsFolder_Click" Margin="0,0,8,0" />
                             <Button Content="Open log" Click="OpenLog_Click" Margin="0,0,8,0" />

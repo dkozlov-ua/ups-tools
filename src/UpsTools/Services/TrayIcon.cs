@@ -4,8 +4,17 @@ using Forms = System.Windows.Forms;
 
 namespace UpsTools.Services;
 
+/// <summary>Shows the UPS state outside the window.</summary>
+public interface ITray
+{
+    void Update(TrayState state, string status);
+
+    /// <summary>A balloon, for when Windows notifications aren't available.</summary>
+    void Notify(string title, string text, bool warning = false);
+}
+
 /// <summary>Notification-area icon, coloured by the UPS state, with a small context menu.</summary>
-public sealed class TrayIcon : IDisposable
+public sealed class TrayIcon : ITray, IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
     private readonly Forms.ToolStripMenuItem _statusItem;
@@ -37,8 +46,17 @@ public sealed class TrayIcon : IDisposable
         };
     }
 
+    /// <summary>The icon's state, tooltip and the status line of its menu (for the tests).</summary>
+    internal (TrayState State, string Tooltip, string Status) Current => (_state, _icon.Text, _statusItem.Text ?? "");
+
+    /// <summary>The icon shown for each state (for the tests).</summary>
+    internal IReadOnlyDictionary<TrayState, Drawing.Icon> Icons => _icons;
+
+    private TrayState _state;
+
     public void Update(TrayState state, string status)
     {
+        _state = state;
         _icon.Icon = _icons[state];
         var text = $"UPS Tools — {status}";
         _icon.Text = text.Length > 127 ? text[..127] : text;
@@ -48,7 +66,7 @@ public sealed class TrayIcon : IDisposable
     public void Notify(string title, string text, bool warning = false) =>
         _icon.ShowBalloonTip(5000, title, text, warning ? Forms.ToolTipIcon.Warning : Forms.ToolTipIcon.Info);
 
-    private static Drawing.Icon Recolored(Drawing.Icon baseIcon, TrayState state)
+    internal static Drawing.Icon Recolored(Drawing.Icon baseIcon, TrayState state)
     {
         using var bitmap = baseIcon.ToBitmap();
         StatusArt.Recolor(bitmap, state);

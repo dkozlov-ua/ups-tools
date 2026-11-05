@@ -22,7 +22,8 @@ namespace UpsTools.Services;
 /// </remarks>
 public sealed class ElevatedTasks(AppLog log)
 {
-    public const string FolderPath = @"\UpsTools";
+    /// <summary>\UpsTools, or \UpsTools-name for a profile (<see cref="AppProfile"/>).</summary>
+    public static string FolderPath { get; } = @"\UpsTools" + AppProfile.Suffix;
     public const string RunScriptArgument = "--run-script";
 
     private const int TaskRunLevelHighest = 1;
@@ -34,7 +35,12 @@ public sealed class ElevatedTasks(AppLog log)
     public static string TaskName(ScriptAction action) => $"script-{action.Id}";
     public static string TaskPath(ScriptAction action) => $@"{FolderPath}\{TaskName(action)}";
 
-    private static string Executable => Environment.ProcessPath ?? throw new InvalidOperationException("Unknown exe path");
+    /// <summary>What the tasks start: this exe, unless a test points it at UpsTools.exe.</summary>
+    internal static string Executable
+    {
+        get => field ?? Environment.ProcessPath ?? throw new InvalidOperationException("Unknown exe path");
+        set;
+    }
 
     public static string TaskArguments(ScriptAction action) =>
         $"{RunScriptArgument} \"{action.Path}\"" + (action.Arguments.Length > 0 ? " " + action.Arguments : "");
@@ -156,7 +162,7 @@ public sealed class ElevatedTasks(AppLog log)
         {
             var names = OwnTasks();
             if (names.Count == 0) return null;
-            var code = await RunElevatedAsync(Executable, Uninstaller.DeleteTasksArgument);
+            var code = await RunElevatedAsync(Executable, Uninstaller.DeleteTasksArgument + AppProfile.CommandLine);
             var problem = code switch
             {
                 null => "the administrator prompt was cancelled",
@@ -201,7 +207,7 @@ public sealed class ElevatedTasks(AppLog log)
     }
 
     /// <summary>Names of the tasks in \UpsTools that start this exe.</summary>
-    private static List<string> OwnTasks()
+    internal static List<string> OwnTasks()
     {
         var names = new List<string>();
         dynamic tasks;
@@ -284,7 +290,7 @@ public sealed class ElevatedTasks(AppLog log)
         return service;
     }
 
-    private static string TaskXml(ScriptAction action)
+    internal static string TaskXml(ScriptAction action)
     {
         XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
         XElement E(string name, params object[] content) => new(ns + name, content);

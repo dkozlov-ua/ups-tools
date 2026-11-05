@@ -12,18 +12,18 @@
         <!-- Device header -->
         <DockPanel Margin="6,0,6,6">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="{Binding LastUpdated}" Style="{StaticResource Caption}" Margin="0,0,12,0" />
+                <TextBlock Text="{Binding LastUpdated}" AutomationProperties.AutomationId="LastUpdated" Style="{StaticResource Caption}" Margin="0,0,12,0" />
                 <Border Style="{StaticResource LinkPill}" Tag="{Binding Link}">
                     <StackPanel Orientation="Horizontal">
                         <Ellipse Style="{StaticResource LinkDot}" Tag="{Binding Link}" />
-                        <TextBlock Text="{Binding LinkText}" FontWeight="SemiBold"
+                        <TextBlock Text="{Binding LinkText}" AutomationProperties.AutomationId="LinkText" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                     </StackPanel>
                 </Border>
             </StackPanel>
             <StackPanel>
-                <TextBlock Text="{Binding DeviceTitle}" Style="{StaticResource PageTitle}" />
-                <TextBlock Text="{Binding DeviceSubtitle}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
+                <TextBlock Text="{Binding DeviceTitle}" AutomationProperties.AutomationId="DeviceTitle" Style="{StaticResource PageTitle}" />
+                <TextBlock Text="{Binding DeviceSubtitle}" AutomationProperties.AutomationId="DeviceSubtitle" Style="{StaticResource Caption}" Margin="0,2,0,0" />
             </StackPanel>
         </DockPanel>
 
@@ -45,8 +45,8 @@
                         <TextBlock Style="{StaticResource Glyph}" Tag="{Binding GridTone}" Text="&#xE945;" />
                         <TextBlock Style="{StaticResource Caption}" Text="Grid" />
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Tag="{Binding GridTone}" Text="{Binding GridValue}" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding GridDetail}" />
+                    <TextBlock Style="{StaticResource Value}" Tag="{Binding GridTone}" Text="{Binding GridValue}" AutomationProperties.AutomationId="GridValue" />
+                    <TextBlock Style="{StaticResource Detail}" Text="{Binding GridDetail}" AutomationProperties.AutomationId="GridDetail" />
                 </StackPanel>
             </Border>
 
@@ -56,9 +56,9 @@
                         <TextBlock Style="{StaticResource Glyph}" Tag="{Binding BatteryTone}" Text="&#xE83F;" />
                         <TextBlock Style="{StaticResource Caption}" Text="Battery" />
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding BatteryValue}" />
+                    <TextBlock Style="{StaticResource Value}" Text="{Binding BatteryValue}" AutomationProperties.AutomationId="BatteryValue" />
                     <ProgressBar Style="{StaticResource ToneBar}" Tag="{Binding BatteryTone}" Value="{Binding BatteryPercent, Mode=OneWay}" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding BatteryDetail}" />
+                    <TextBlock Style="{StaticResource Detail}" Text="{Binding BatteryDetail}" AutomationProperties.AutomationId="BatteryDetail" />
                 </StackPanel>
             </Border>
 
@@ -68,8 +68,8 @@
                         <TextBlock Style="{StaticResource Glyph}" Tag="{Binding FlowTone}" Text="&#xE8AB;" />
                         <TextBlock Style="{StaticResource Caption}" Text="Charge / discharge rate" />
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Tag="{Binding FlowTone}" Text="{Binding FlowValue}" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding FlowDetail}" />
+                    <TextBlock Style="{StaticResource Value}" Tag="{Binding FlowTone}" Text="{Binding FlowValue}" AutomationProperties.AutomationId="FlowValue" />
+                    <TextBlock Style="{StaticResource Detail}" Text="{Binding FlowDetail}" AutomationProperties.AutomationId="FlowDetail" />
                 </StackPanel>
             </Border>
 
@@ -79,8 +79,8 @@
                         <TextBlock Style="{StaticResource Glyph}" Text="&#xE916;" />
                         <TextBlock Style="{StaticResource Caption}" Text="Time on battery" />
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding RuntimeValue}" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding RuntimeDetail}" />
+                    <TextBlock Style="{StaticResource Value}" Text="{Binding RuntimeValue}" AutomationProperties.AutomationId="RuntimeValue" />
+                    <TextBlock Style="{StaticResource Detail}" Text="{Binding RuntimeDetail}" AutomationProperties.AutomationId="RuntimeDetail" />
                 </StackPanel>
             </Border>
 
@@ -90,8 +90,8 @@
                         <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;" />
                         <TextBlock Style="{StaticResource Caption}" Text="Input power" />
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding InputValue}" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding InputDetail}" />
+                    <TextBlock Style="{StaticResource Value}" Text="{Binding InputValue}" AutomationProperties.AutomationId="InputValue" />
+                    <TextBlock Style="{StaticResource Detail}" Text="{Binding InputDetail}" AutomationProperties.AutomationId="InputDetail" />
                 </StackPanel>
             </Border>
 
@@ -101,8 +101,8 @@
                         <TextBlock Style="{StaticResource Glyph}" Text="&#xE898;" />
                         <TextBlock Style="{StaticResource Caption}" Text="Output power (load)" />
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding OutputValue}" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding OutputDetail}" />
+                    <TextBlock Style="{StaticResource Value}" Text="{Binding OutputValue}" AutomationProperties.AutomationId="OutputValue" />
+                    <TextBlock Style="{StaticResource Detail}" Text="{Binding OutputDetail}" AutomationProperties.AutomationId="OutputDetail" />
                 </StackPanel>
             </Border>
         </UniformGrid>
@@ -112,7 +112,7 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Recent activity" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Activity}">
+                    <ItemsControl ItemsSource="{Binding Activity}" AutomationProperties.AutomationId="Activity">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type svc:LogEntry}">
                                 <Grid Margin="0,3">
@@ -124,7 +124,7 @@
                                     <TextBlock Text="{Binding TimeText}" Style="{StaticResource Caption}" VerticalAlignment="Top" />
                                     <TextBlock x:Name="Icon" Grid.Column="1" FontFamily="{StaticResource IconFont}" FontSize="13"
                                                Margin="0,2,0,0" Text="&#xE946;" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                    <TextBlock x:Name="Message" Grid.Column="2" Text="{Binding Message}" TextWrapping="Wrap"
+                                    <TextBlock x:Name="Message" Grid.Column="2" Text="{Binding Message}" AutomationProperties.AutomationId="ActivityMessage" TextWrapping="Wrap"
                                                Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                                 </Grid>
                                 <DataTemplate.Triggers>

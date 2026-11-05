@@ -13,18 +13,28 @@ namespace UpsTools.Services;
 /// app's name and icon in their header and in Settings → System → Notifications.
 /// When toasts can't be shown, the tray icon's balloon is used instead.
 /// </summary>
-public sealed class Notifier
+public interface INotifications
 {
-    public const string AppUserModelId = "DKozlov.UpsTools";
-    private const string RegistrationKey = @"Software\Classes\AppUserModelId\" + AppUserModelId;
+    void Show(UpsNotice notice, string? attribution);
+
+    /// <param name="tag">A later notification with the same tag replaces this one.</param>
+    void Show(string tag, TrayState state, string title, string body, string? footnote = null,
+        string? attribution = null, bool important = false);
+}
+
+public sealed class Notifier : INotifications
+{
+    /// <summary>DKozlov.UpsTools, or DKozlov.UpsTools-name for a profile (<see cref="AppProfile"/>).</summary>
+    public static string AppUserModelId { get; } = "DKozlov.UpsTools" + AppProfile.Suffix;
+    private static string RegistrationKey => @"Software\Classes\AppUserModelId\" + AppUserModelId;
     private const string Group = "ups";
 
     /// <summary>Generated images the notifications point at (not settings, so not roaming).</summary>
     public static string CacheFolder { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UpsTools");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UpsTools" + AppProfile.Suffix);
 
     private readonly AppLog _log;
-    private readonly TrayIcon _tray;
+    private readonly ITray _tray;
     private readonly Action _activated;
     private readonly Dictionary<TrayState, string?> _logos = [];
     private readonly Dictionary<string, ToastNotification> _shown = [];
@@ -32,7 +42,7 @@ public sealed class Notifier
     private bool _toastsUnavailable;
 
     /// <param name="activated">Called, on any thread, when the user clicks a notification.</param>
-    public Notifier(AppLog log, TrayIcon tray, Action activated)
+    public Notifier(AppLog log, ITray tray, Action activated)
     {
         _log = log;
         _tray = tray;
@@ -59,19 +69,8 @@ public sealed class Notifier
         {
             _toasts ??= Register();
 
-            var binding = new XElement("binding", new XAttribute("template", "ToastGeneric"),
-                new XElement("text", title),
-                new XElement("text", body));
-            if (footnote is not null) binding.Add(new XElement("text", footnote));
-            if (attribution is not null) binding.Add(new XElement("text", new XAttribute("placement", "attribution"), attribution));
-            if (Logo(state) is { } logo)
-                binding.Add(new XElement("image", new XAttribute("placement", "appLogoOverride"), new XAttribute("src", logo)));
-
-            var toast = new XElement("toast", new XAttribute("launch", "open"), new XElement("visual", binding));
-            if (important) toast.Add(new XAttribute("duration", "long"));
-
             var xml = new Windows.Data.Xml.Dom.XmlDocument();
-            xml.LoadXml(toast.ToString(SaveOptions.DisableFormatting));
+            xml.LoadXml(ToastXml(title, body, footnote, attribution, Logo(state), important).ToString(SaveOptions.DisableFormatting));
             var notification = new ToastNotification(xml) { Tag = tag, Group = Group };
             notification.Activated += (_, _) => _activated();
             notification.Failed += (_, e) => _log.Warn($"Notification \"{title}\" failed: 0x{e.ErrorCode.HResult:X8}");
@@ -88,13 +87,29 @@ public sealed class Notifier
         }
     }
 
+    /// <summary>The toast's content: title, body, then the footnote, with the attribution and the logo.</summary>
+    internal static XElement ToastXml(string title, string body, string? footnote, string? attribution, string? logo, bool important)
+    {
+        var binding = new XElement("binding", new XAttribute("template", "ToastGeneric"),
+            new XElement("text", title),
+            new XElement("text", body));
+        if (footnote is not null) binding.Add(new XElement("text", footnote));
+        if (attribution is not null) binding.Add(new XElement("text", new XAttribute("placement", "attribution"), attribution));
+        if (logo is not null)
+            binding.Add(new XElement("image", new XAttribute("placement", "appLogoOverride"), new XAttribute("src", logo)));
+
+        var toast = new XElement("toast", new XAttribute("launch", "open"), new XElement("visual", binding));
+        if (important) toast.Add(new XAttribute("duration", "long"));
+        return toast;
+    }
+
     private ToastNotifier Register()
     {
         Directory.CreateDirectory(CacheFolder);
         var icon = SavePng("app.png", TrayState.Neutral);
         using (var key = Registry.CurrentUser.CreateSubKey(RegistrationKey))
         {
-            key.SetValue("DisplayName", "UPS Tools");
+            key.SetValue("DisplayName", AppProfile.Name is { } profile ? $"UPS Tools ({profile})" : "UPS Tools");
             key.SetValue("IconUri", icon);
         }
         return ToastNotificationManager.CreateToastNotifier(AppUserModelId);
@@ -146,7 +161,7 @@ public sealed class Notifier
         return path;
     }
 
-    private static TrayState ToTray(NoticeTone tone) => tone switch
+    internal static TrayState ToTray(NoticeTone tone) => tone switch
     {
         NoticeTone.Good => TrayState.GridOnline,
         NoticeTone.Warning => TrayState.OnBattery,

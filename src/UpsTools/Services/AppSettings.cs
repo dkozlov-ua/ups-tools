@@ -44,18 +44,23 @@ public sealed class ScriptAction
 }
 
 /// <summary>Loads and saves <see cref="AppSettings"/> as JSON in %APPDATA%\UpsTools.</summary>
-public sealed class SettingsStore(AppLog log)
+/// <param name="folder">Where settings.json goes: <see cref="DefaultFolder"/> unless a test says otherwise.</param>
+public sealed class SettingsStore(AppLog log, string? folder = null)
 {
+    public const string FileName = "settings.json";
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
     };
 
-    public static string Folder { get; } =
-        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "UpsTools");
+    /// <summary>%APPDATA%\UpsTools, or %APPDATA%\UpsTools-name for a profile (<see cref="AppProfile"/>).</summary>
+    public static string DefaultFolder { get; } =
+        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "UpsTools" + AppProfile.Suffix);
 
-    public static string FilePath { get; } = System.IO.Path.Combine(Folder, "settings.json");
+    public string Folder { get; } = folder ?? DefaultFolder;
+    public string FilePath => System.IO.Path.Combine(Folder, FileName);
 
     public AppSettings Load()
     {

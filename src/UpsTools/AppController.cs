@@ -12,22 +12,31 @@ public sealed class AppController
     private readonly Dispatcher _ui;
     private readonly SettingsStore _store;
     private readonly UpsDrivers _drivers;
-    private readonly ScriptRunner _scripts;
+    private readonly Func<ScriptAction, string, CancellationToken, Task<StepResult>> _runScript;
     private UpsMonitor? _monitor;
-    private TrayIcon? _tray;
-    private Notifier? _notifier;
+    private ITray? _tray;
+    private INotifications? _notifier;
     private DateTimeOffset? _gridLostAt;
     private readonly Dictionary<UpsEventKind, (ScriptChain Chain, CancellationTokenSource Cancel)> _chains = [];
 
-    public AppController(Dispatcher ui)
+    public AppController(Dispatcher ui) : this(ui, new AppLog())
+    {
+    }
+
+    /// <param name="ui">The UI thread: everything here runs on it.</param>
+    /// <param name="log">The log; its folder holds the settings too.</param>
+    /// <param name="drivers">The UPS drivers: the real ones (<see cref="UpsDrivers"/>) unless a test says otherwise.</param>
+    /// <param name="runScript">Runs a script: <see cref="ScriptRunner.RunAsync"/> unless a test says otherwise.</param>
+    internal AppController(Dispatcher ui, AppLog log, IReadOnlyList<IUpsDriver>? drivers = null,
+        Func<ScriptAction, string, CancellationToken, Task<StepResult>>? runScript = null)
     {
         _ui = ui;
-        Log = new AppLog();
-        _store = new SettingsStore(Log);
+        Log = log;
+        _store = new SettingsStore(Log, log.Folder);
         Settings = _store.Load();
-        _drivers = new UpsDrivers(Log.Info);
+        _drivers = drivers is null ? new UpsDrivers(Log.Info) : new UpsDrivers(drivers);
         Elevated = new ElevatedTasks(Log);
-        _scripts = new ScriptRunner(Log, Elevated);
+        _runScript = runScript ?? new ScriptRunner(Log, Elevated).RunAsync;
 
         Dashboard = new DashboardViewModel();
         foreach (var entry in Log.Recent) Dashboard.AddActivity(entry);
@@ -47,6 +56,7 @@ public sealed class AppController
     public AppLog Log { get; }
     public ElevatedTasks Elevated { get; }
     public AppSettings Settings { get; }
+    public string SettingsFolder => _store.Folder;
     public DashboardViewModel Dashboard { get; }
     public ObservableCollection<EventScriptsViewModel> EventScripts { get; }
     public ConfigurationViewModel Configuration { get; }
@@ -54,7 +64,7 @@ public sealed class AppController
 
     public void Save() => _store.Save(Settings);
 
-    public void AttachTray(TrayIcon tray, Notifier notifier)
+    public void AttachTray(ITray tray, INotifications notifier)
     {
         _tray = tray;
         _notifier = notifier;
@@ -170,7 +180,7 @@ public sealed class AppController
         var cancel = new CancellationTokenSource();
         if (kind is { } key) _chains[key] = (chain, cancel);
 
-        var run = chain.RunAsync((i, _, ct) => _scripts.RunAsync(actions[i], reason, ct), cancel.Token);
+        var run = chain.RunAsync((i, _, ct) => _runScript(actions[i], reason, ct), cancel.Token);
         _ = FinishAsync();
         return chain;
 
@@ -218,13 +228,16 @@ public sealed class AppController
 
     private string? DeviceTitle => Settings.Ups is { } ups ? $"Bluetti {ups.Model}" : null;
 
+    /// <summary>The running monitor, if any (for the tests).</summary>
+    internal UpsMonitor? Monitor => _monitor;
+
     public void OnResumedFromSleep()
     {
         Log.Info("PC resumed from sleep; reconnecting to the UPS");
         _monitor?.NotifyResumed();
     }
 
-    private void OnUpsEvent(UpsEventKind kind, UpsStatus? status)
+    internal void OnUpsEvent(UpsEventKind kind, UpsStatus? status)
     {
         Log.Event(kind.Title());
 

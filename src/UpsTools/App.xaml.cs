@@ -8,9 +8,10 @@ namespace UpsTools;
 
 public partial class App : Application
 {
-    private const string InstanceMutexName = @"Local\UpsTools.SingleInstance";
-    private const string ShowWindowEventName = @"Local\UpsTools.ShowWindow";
-    private const string ExitEventName = @"Local\UpsTools.Exit";
+    // installer\UpsTools.iss checks the normal copy's mutex by name.
+    private static readonly string InstanceMutexName = $@"Local\UpsTools{AppProfile.Suffix}.SingleInstance";
+    private static readonly string ShowWindowEventName = $@"Local\UpsTools{AppProfile.Suffix}.ShowWindow";
+    private static readonly string ExitEventName = $@"Local\UpsTools{AppProfile.Suffix}.Exit";
     private const string ExitArgument = "--exit";
 
     private Mutex? _instanceMutex;
