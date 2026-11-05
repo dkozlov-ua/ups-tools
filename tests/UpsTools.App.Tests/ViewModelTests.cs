@@ -84,6 +84,14 @@ public class DashboardViewModelTests
         Assert.Equal(("1 h 35 m", "Reported by the UPS"), (_vm.RuntimeValue, _vm.RuntimeDetail));
     }
 
+    [Fact]
+    public void An_optimistic_runtime_from_the_UPS_is_shown_but_not_used()
+    {
+        _vm.Apply(Status with { GridPresent = false, BatteryPercent = 98, AcInputW = 0, ReportedRuntime = TimeSpan.FromMinutes(405) });
+
+        Assert.Equal(("6 h 23 m", "Estimated at the current 157 W load; the UPS says 6 h 45 m"), (_vm.RuntimeValue, _vm.RuntimeDetail));
+    }
+
     [Theory]
     [InlineData(19, Tone.Bad)]
     [InlineData(20, Tone.Warning)]

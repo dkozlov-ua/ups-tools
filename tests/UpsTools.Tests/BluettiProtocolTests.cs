@@ -95,7 +95,7 @@ public class BluettiProtocolTests
     {
         var blocks = new Dictionary<RegisterBlock, byte[]>(RealEl100V2OnGrid)
         {
-            // SOC 101 %, runtime 3000 h, no model text
+            // SOC 101 %, runtime 30072 minutes (beyond the 99.9 h placeholder), no model text
             [new(102, 18)] = Hex("0065" + "0000" + "7578" + new string('0', 66)),
             [new(1314, 2)] = Hex("00000000"), // on battery: the runtime would count
         };

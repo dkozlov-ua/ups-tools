@@ -43,8 +43,8 @@ the NAS when the grid comes back.
 
 Events fire on transitions only. The first reading after start-up is a baseline, so starting the app during an outage
 does not fire "Grid lost". *Battery low* is the exception: started on battery with the battery already low, it fires on
-the first reading. The time left is the UPS's estimate at the current load, so it has to be at or below the limit in two
-readings in a row: a short spike in load doesn't count.
+the first reading. The time left is the lower of the UPS's own estimate and the stored energy divided by the current
+load, so it has to be at or below the limit in two readings in a row: a short spike in load doesn't count.
 
 With a wait before *Grid lost* (Configuration → Events), a blip shorter than the wait fires nothing: no scripts, no
 notification, only a line in the log. Once the wait is over, *Grid lost* fires, and the outage (in *Grid restored* and

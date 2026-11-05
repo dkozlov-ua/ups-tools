@@ -34,20 +34,21 @@ public sealed record UpsStatus
     /// </summary>
     public double? BatteryFlowW => TotalInputW is { } input && TotalOutputW is { } output ? input - output : null;
 
+    /// <summary>Remaining energy divided by the current output power, when the capacity and a real load are known.</summary>
+    public TimeSpan? CalculatedRuntime =>
+        BatteryPercent is { } soc && CapacityWh is { } capacity && TotalOutputW is { } load && load >= 1
+            ? TimeSpan.FromHours(capacity * soc / 100.0 / load)
+            : null;
+
     /// <summary>
-    /// How long the battery would last at the current load: the device's own figure when it reports one,
-    /// otherwise remaining energy divided by the current output power.
+    /// How long the battery would last at the current load: the lower of the device's own figure and
+    /// <see cref="CalculatedRuntime"/>, so an optimistic device estimate can't delay "Battery low".
     /// </summary>
-    public TimeSpan? EstimatedRuntime
-    {
-        get
-        {
-            if (ReportedRuntime is { } reported) return reported;
-            if (BatteryPercent is not { } soc || CapacityWh is not { } capacity || TotalOutputW is not { } load || load < 1)
-                return null;
-            return TimeSpan.FromHours(capacity * soc / 100.0 / load);
-        }
-    }
+    public TimeSpan? EstimatedRuntime => UsesReportedRuntime ? ReportedRuntime : CalculatedRuntime;
+
+    /// <summary>Whether <see cref="EstimatedRuntime"/> is the device's own figure.</summary>
+    public bool UsesReportedRuntime =>
+        ReportedRuntime is { } reported && (CalculatedRuntime is not { } calculated || reported <= calculated);
 
     private static double? Sum(double? a, double? b) => a is null && b is null ? null : (a ?? 0) + (b ?? 0);
 }

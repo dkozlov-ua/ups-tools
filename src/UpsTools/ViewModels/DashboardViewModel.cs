@@ -126,9 +126,10 @@ public sealed class DashboardViewModel : ObservableObject
         if (s.EstimatedRuntime is { } runtime)
         {
             RuntimeValue = Duration(runtime);
-            RuntimeDetail = s.ReportedRuntime is not null
+            RuntimeDetail = s.UsesReportedRuntime
                 ? "Reported by the UPS"
-                : $"Estimated at the current {Watts(s.TotalOutputW ?? 0)} load";
+                : $"Estimated at the current {Watts(s.TotalOutputW ?? 0)} load"
+                  + (s.ReportedRuntime is { } reported ? $"; the UPS says {Duration(reported)}" : "");
         }
         else
         {
