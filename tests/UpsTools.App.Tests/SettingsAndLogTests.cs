@@ -98,8 +98,21 @@ public sealed class SettingsAndLogTests : IDisposable
         Assert.Equal((@"C:\scripts\pause.ahk", "--now", false, true, true),
             (script.Path, script.Arguments, script.Enabled, script.WaitForExit, script.RunElevated));
         Assert.False(File.Exists(_store.FilePath + ".tmp"));
+        Assert.DoesNotContain("\"WaitLimitMinutes\"", json); // no limit: not written
         Assert.DoesNotContain("\"Power\"", json); // only built-in actions have these
         Assert.DoesNotContain("\"CountdownSeconds\"", json);
+    }
+
+    [Theory]
+    [InlineData(30, 30)]
+    [InlineData(-2, 0)]
+    [InlineData(5000, 1440)]
+    public void A_scripts_time_limit_round_trips_clamped(int saved, int loaded)
+    {
+        var settings = new AppSettings();
+        settings.ScriptsFor(UpsEventKind.GridLost).Add(new ScriptAction { Path = "a.ps1", WaitForExit = true, WaitLimitMinutes = saved });
+        _store.Save(settings);
+        Assert.Equal(loaded, _store.Load().ScriptsFor(UpsEventKind.GridLost)[0].WaitLimitMinutes);
     }
 
     [Fact]

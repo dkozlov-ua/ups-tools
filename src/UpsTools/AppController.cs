@@ -205,13 +205,16 @@ public sealed class AppController
         if (kind is { } k) StopChain(k, $"{reason} started again");
 
         // A built-in action is waited for (its countdown, and sleep until the PC wakes up), and stopping the chain stops its countdown.
-        var chain = new ScriptChain([.. actions.Select(a => new ScriptStep(a.Name, a.WaitForExit || a.Power is not null, UndoneByStopping: a.Power is not null))]);
+        var chain = new ScriptChain([.. actions.Select(a => new ScriptStep(a.Name, a.WaitForExit || a.Power is not null,
+            UndoneByStopping: a.Power is not null,
+            TimeLimit: a.Power is null && a.WaitForExit && a.WaitLimitMinutes > 0 ? a.WaitLimitMinutes * WaitLimitUnit : null))]);
         var cancel = new CancellationTokenSource();
         if (kind is { } key) _chains[key] = (chain, cancel);
 
         var run = chain.RunAsync((i, _, ct) =>
                 actions[i].Power is null ? _runScript(actions[i], reason, environment, ct) : _power.RunAsync(actions[i], reason, ct),
-            cancel.Token);
+            cancel.Token,
+            timedOut: step => Log.Warn($"{reason}: {step.Name} is still running after {UpsFormat.Duration(step.TimeLimit!.Value)}; going on without it"));
         _ = FinishAsync();
         return chain;
 
@@ -258,6 +261,9 @@ public sealed class AppController
     }
 
     private string? DeviceTitle => Settings.Ups is { } ups ? $"Bluetti {ups.Model}" : null;
+
+    /// <summary>What one of <see cref="ScriptAction.WaitLimitMinutes"/> is: a minute, unless a test says otherwise.</summary>
+    internal static TimeSpan WaitLimitUnit { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>The running monitor, if any (for the tests).</summary>
     internal UpsMonitor? Monitor => _monitor;

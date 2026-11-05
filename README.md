@@ -12,6 +12,9 @@ the NAS when the grid comes back.
   - They start in the listed order; drag a script by its handle (or Alt+Up / Alt+Down) to reorder.
   - **Wait until it finishes**: the next script starts only after this one exits with code 0. If it fails (another exit
     code, or it can't be started), the scripts after it are skipped, and a notification says so.
+    - **at most … min**: if it is still running after that long, the next script starts anyway and a notification says
+      so; the script itself keeps running. 0 (the default) waits as long as it takes. Use it for a script that could
+      hang before a *Hibernate*, e.g. one that shuts down VMs.
   - **Run as administrator**: the script runs elevated without a UAC prompt when the event fires, so it works with
     nobody at the PC (see [Scripts that run as administrator](#scripts-that-run-as-administrator)).
   - **Add action** → *Sleep*, *Hibernate* or *Shut down*: no script needed. A window on top of everything counts down

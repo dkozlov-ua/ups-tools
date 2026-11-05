@@ -65,6 +65,12 @@ public sealed class ScriptAction
     /// <summary>The next script starts only after this one exits with code 0; if it fails, the rest are skipped.</summary>
     public bool WaitForExit { get; set; }
 
+    /// <summary>With <see cref="WaitForExit"/>: still running after this many minutes, the next script starts anyway; 0: no limit.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int WaitLimitMinutes { get; set; }
+
+    public const int MaxWaitLimitMinutes = 1440;
+
     /// <summary>Runs as administrator, through a scheduled task registered when this was turned on.</summary>
     public bool RunElevated { get; set; }
 }
@@ -99,6 +105,8 @@ public sealed class SettingsStore(AppLog log, string? folder = null)
             settings.BatteryLowPercent = Math.Clamp(settings.BatteryLowPercent, 0, AppSettings.MaxBatteryLowPercent);
             settings.BatteryLowMinutes = Math.Clamp(settings.BatteryLowMinutes, 0, AppSettings.MaxBatteryLowMinutes);
             settings.GridLostDelaySeconds = Math.Clamp(settings.GridLostDelaySeconds, 0, AppSettings.MaxGridLostDelaySeconds);
+            foreach (var action in settings.Scripts.Values.SelectMany(list => list))
+                action.WaitLimitMinutes = Math.Clamp(action.WaitLimitMinutes, 0, ScriptAction.MaxWaitLimitMinutes);
             return settings;
         }
         catch (Exception ex)

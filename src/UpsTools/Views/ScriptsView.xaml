@@ -9,7 +9,7 @@
             <StackPanel Margin="6,0,6,6">
                 <TextBlock Text="Scripts" Style="{StaticResource PageTitle}" />
                 <TextBlock Style="{StaticResource Detail}" FontSize="13" Margin="0,2,0,0"
-                           Text="Run scripts when the UPS state changes, in the listed order (drag a script by its handle to reorder). A script set to wait must finish successfully before the next one starts; if it fails, the rest are skipped. Add action puts the PC to sleep, hibernates or shuts it down after a countdown you can cancel. When the grid comes back, the Grid lost and Battery low scripts that haven't started yet are skipped; when the UPS answers again, the UPS unreachable ones. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
+                           Text="Run scripts when the UPS state changes, in the listed order (drag a script by its handle to reorder). A script set to wait must finish successfully before the next one starts; if it fails, the rest are skipped, and if it is still running at its time limit, the next one starts anyway. Add action puts the PC to sleep, hibernates or shuts it down after a countdown you can cancel. When the grid comes back, the Grid lost and Battery low scripts that haven't started yet are skipped; when the UPS answers again, the UPS unreachable ones. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
             </StackPanel>
 
             <ItemsControl ItemsSource="{Binding EventScripts}">
@@ -142,10 +142,20 @@
                                                             AutomationProperties.Name="{Binding FileName, StringFormat=Remove {0}}" />
 
                                                     <WrapPanel x:Name="Options" Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" Margin="0,4,0,0">
-                                                        <CheckBox IsChecked="{Binding WaitForExit}" MinWidth="0" Margin="0,0,24,0"
+                                                        <CheckBox IsChecked="{Binding WaitForExit}" MinWidth="0" Margin="0,0,8,0"
                                                                   AutomationProperties.Name="{Binding FileName, StringFormat=Wait until {0} finishes}"
                                                                   Content="Wait until it finishes"
                                                                   ToolTip="The next script starts only after this one exits with exit code 0. If it fails (another exit code, or it can't be started), the scripts after it don't run." />
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,24,0" VerticalAlignment="Center"
+                                                                    Visibility="{Binding WaitForExit, Converter={StaticResource BoolToVisibility}}"
+                                                                    ToolTip="If it is still running after this many minutes, the next script starts anyway; it keeps running (0: wait as long as it takes)">
+                                                            <TextBlock Text="at most" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                            <TextBox Width="56" HorizontalContentAlignment="Right"
+                                                                     Text="{Binding WaitLimit.Text, UpdateSourceTrigger=PropertyChanged}"
+                                                                     Tag="{Binding WaitLimit}" LostFocus="Number_LostFocus"
+                                                                     AutomationProperties.Name="{Binding FileName, StringFormat=Minutes to wait at most for {0}}" />
+                                                            <TextBlock Text="min" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                        </StackPanel>
                                                         <CheckBox IsChecked="{Binding RunElevated}" IsEnabled="{Binding IsIdle}" MinWidth="0"
                                                                   AutomationProperties.Name="{Binding FileName, StringFormat=Run {0} as administrator}"
                                                                   Content="Run as administrator"

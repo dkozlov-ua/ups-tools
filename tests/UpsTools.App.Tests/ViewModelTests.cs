@@ -418,6 +418,23 @@ public sealed class ScriptsViewModelTests : IDisposable
         Assert.Equal(2, _saves);
     }
 
+    [Theory]
+    [InlineData("15", 15)]
+    [InlineData("99999", 1440)]
+    public void The_time_limit_of_a_waited_script_saves_clamped(string text, int minutes)
+    {
+        _group.Add(Script("slow.ps1"));
+        var item = _group.Items[0];
+        Assert.Equal("0", item.WaitLimit.Text);
+
+        item.WaitLimit.Text = text;
+        item.WaitLimit.Normalize();
+
+        Assert.Equal(minutes, item.Model.WaitLimitMinutes);
+        Assert.Equal(minutes.ToString(), item.WaitLimit.Text);
+        Assert.Equal(2, _saves);
+    }
+
     [Fact]
     public void A_script_is_not_a_built_in_action()
     {

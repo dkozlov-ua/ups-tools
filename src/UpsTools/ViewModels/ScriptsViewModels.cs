@@ -80,6 +80,11 @@ public sealed class ScriptItemViewModel : ObservableObject
         Model = model;
         _elevated = elevated;
         _changed = changed;
+        WaitLimit = new NumberSetting(0, ScriptAction.MaxWaitLimitMinutes, () => Model.WaitLimitMinutes, minutes =>
+        {
+            Model.WaitLimitMinutes = minutes;
+            changed();
+        });
         Countdown = new NumberSetting(0, PowerRunner.MaxCountdownSeconds,
             () => Model.CountdownSeconds ?? PowerRunner.DefaultCountdownSeconds,
             seconds =>
@@ -105,6 +110,9 @@ public sealed class ScriptItemViewModel : ObservableObject
 
     /// <summary>For a built-in action: seconds of countdown before it, 0 for none.</summary>
     public NumberSetting Countdown { get; }
+
+    /// <summary>For a script that is waited for: minutes until the next one starts anyway, 0 for no limit.</summary>
+    public NumberSetting WaitLimit { get; }
 
     public bool Enabled
     {

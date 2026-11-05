@@ -31,6 +31,7 @@ public sealed class AppControllerTests : IDisposable
 
     public void Dispose()
     {
+        AppController.WaitLimitUnit = TimeSpan.FromMinutes(1);
         if (_controller is { } c) UiThread.Run(c.StopMonitoringAsync).Wait(TimeSpan.FromSeconds(10));
         _folder.Dispose();
     }
@@ -522,6 +523,35 @@ public sealed class AppControllerTests : IDisposable
         _ups.Answer(false, 20);
         await UiUntil(() => _scripts.Variables.ContainsKey("low.ps1"), "Battery low");
         Assert.InRange(int.Parse(_scripts.Variables["low.ps1"]["UPS_OUTAGE_SECONDS"]!), 1, 10);
+    }
+
+    [Fact]
+    public async Task A_script_still_running_at_its_time_limit_is_left_and_the_next_one_starts()
+    {
+        AppController.WaitLimitUnit = TimeSpan.FromMilliseconds(100); // "minutes"
+        await Start(s => s.ScriptsFor(UpsEventKind.BatteryLow).AddRange(
+            [new ScriptAction { Path = @"C:\scripts\stop-vms.ps1", WaitForExit = true, WaitLimitMinutes = 3 }, Script("hibernate.ps1")]));
+        await Online();
+        await GridLost(10);
+
+        await Wait.Until(() => _scripts.Names.Contains("hibernate.ps1"), what: "the script after the late one");
+        Assert.True(_scripts.IsRunning("stop-vms.ps1") || _scripts.Ran.Count == 2);
+        await UiUntil(() => _notes.All.Count == 3, "the problem notification");
+
+        Assert.Equal(("Battery low: stop-vms.ps1 took too long", "stop-vms.ps1 was still running after 0 m, so the chain went on without it."),
+            (_notes.All[2].Title, _notes.All[2].Body));
+        Assert.Contains(_log.Recent, e => e.Level == LogLevel.Warning && e.Message == "Battery low: stop-vms.ps1 is still running after 0 m; going on without it");
+    }
+
+    [Fact]
+    public async Task Without_wait_the_time_limit_does_nothing()
+    {
+        AppController.WaitLimitUnit = TimeSpan.FromMilliseconds(1);
+        await Start(s => s.ScriptsFor(UpsEventKind.GridLost).Add(new ScriptAction { Path = @"C:\scripts\a.ps1", WaitLimitMinutes = 3 }));
+        await Online();
+        await GridLost();
+        await Task.Delay(200);
+        Assert.Single(_notes.All);
     }
 
     // ---- "Run now"

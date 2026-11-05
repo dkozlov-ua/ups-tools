@@ -7,7 +7,11 @@ namespace UpsTools.Core;
 /// Stopping the chain while it waits for this step means the step doesn't happen (e.g. a countdown before
 /// hibernating the PC), rather than that it keeps running on its own.
 /// </param>
-public sealed record ScriptStep(string Name, bool WaitForExit, bool UndoneByStopping = false);
+/// <param name="TimeLimit">
+/// For a step that is waited for: if it is still running after this long, the chain stops waiting for it and goes
+/// on with the next step (the script keeps running). Null: wait as long as it takes.
+/// </param>
+public sealed record ScriptStep(string Name, bool WaitForExit, bool UndoneByStopping = false, TimeSpan? TimeLimit = null);
 
 /// <summary>
 /// What running one script came to: for a script that is waited for, whether it finished successfully
@@ -45,6 +49,9 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
 
     public List<FailedStep> Failed { get; } = [];
 
+    /// <summary>Scripts waited for that were still running at their <see cref="ScriptStep.TimeLimit"/>: the chain went on without them.</summary>
+    public List<ScriptStep> TimedOut { get; } = [];
+
     /// <summary>The script the chain is waiting for right now.</summary>
     public string? Waiting { get; private set; }
 
@@ -75,9 +82,12 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
 
     /// <param name="run">
     /// Runs step <c>index</c>. For a step that is waited for, it returns when the script has exited, and throws
-    /// <see cref="OperationCanceledException"/> if the token is cancelled first (the script keeps running).
+    /// <see cref="OperationCanceledException"/> if the token is cancelled first (the script keeps running). The token
+    /// is also cancelled when the step's <see cref="ScriptStep.TimeLimit"/> is up.
     /// </param>
-    public async Task RunAsync(Func<int, ScriptStep, CancellationToken, Task<StepResult>> run, CancellationToken cancel)
+    /// <param name="timedOut">Called when the chain stops waiting for a step at its time limit.</param>
+    public async Task RunAsync(Func<int, ScriptStep, CancellationToken, Task<StepResult>> run, CancellationToken cancel,
+        Action<ScriptStep>? timedOut = null)
     {
         if (_next != 0 || Done) throw new InvalidOperationException("A chain runs once.");
         try
@@ -99,9 +109,19 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
                 }
 
                 StepResult result;
+                using var limit = step.WaitForExit && step.TimeLimit is not null ? CancellationTokenSource.CreateLinkedTokenSource(cancel) : null;
+                limit?.CancelAfter(step.TimeLimit!.Value);
                 try
                 {
-                    result = await run(index, step, cancel);
+                    result = await run(index, step, limit?.Token ?? cancel);
+                }
+                catch (OperationCanceledException) when (!cancel.IsCancellationRequested && limit is { IsCancellationRequested: true })
+                {
+                    // Still running at its time limit: go on without it.
+                    Started.Add(step.Name);
+                    TimedOut.Add(step);
+                    timedOut?.Invoke(step);
+                    continue;
                 }
                 catch (OperationCanceledException) when (cancel.IsCancellationRequested)
                 {
@@ -171,6 +191,9 @@ public static class ScriptReport
             var couldNot = chain.Failed.Where(f => f != chain.StoppedAt).Select(f => f.Name).ToList();
             if (couldNot.Count > 0) parts.Add((parts.Count == 0 ? "Couldn't start " : "couldn't start ") + List(couldNot));
 
+            if (chain.TimedOut.Count > 0)
+                parts.Add($"{List(chain.TimedOut.Select(s => s.Name).ToList())} took too long");
+
             if (chain.StoppedAt is { } stop)
             {
                 var what = stop.ByUser ? $"{stop.Name} was cancelled" : $"{stop.Name} failed";
@@ -192,19 +215,25 @@ public static class ScriptReport
     /// <param name="label">What ran the scripts, e.g. "Grid lost" or "Manual run".</param>
     public static (string Title, string Body)? Problems(ScriptChain chain, string label)
     {
+        var late = chain.TimedOut.Count == 0 ? "" : " " + string.Join(" ", chain.TimedOut.Select(s =>
+            $"{s.Name} was still running after {UpsFormat.Duration(s.TimeLimit ?? TimeSpan.Zero)}, so the chain went on without it."));
+
         if (chain.StoppedAt is { } stop && !stop.ByUser)
         {
             var body = Capitalize(stop.Problem) +
                        (chain.Skipped.Count > 0 ? $", so {List(chain.Skipped)} didn't run." : ".");
             var others = chain.Failed.Where(f => f != stop).Select(f => f.Name).ToList();
             if (others.Count > 0) body += $" Couldn't start {List(others)} either.";
-            return ($"{label}: {stop.Name} failed", body);
+            return ($"{label}: {stop.Name} failed", body + late);
         }
 
         var failed = chain.Failed.Where(f => !f.ByUser).ToList();
-        if (failed.Count == 0) return null;
-        return ($"{label}: couldn't start {List(failed.Select(f => f.Name).ToList())}",
-            string.Join(" ", failed.Select(f => $"{f.Name}: {f.Problem}.")));
+        if (failed.Count > 0)
+            return ($"{label}: couldn't start {List(failed.Select(f => f.Name).ToList())}",
+                string.Join(" ", failed.Select(f => $"{f.Name}: {f.Problem}.")) + late);
+
+        if (chain.TimedOut.Count == 0) return null;
+        return ($"{label}: {List(chain.TimedOut.Select(s => s.Name).ToList())} took too long", late.TrimStart());
     }
 
     public static string List(IReadOnlyList<string> names) => names.Count switch

@@ -36,6 +36,20 @@ public sealed class ScriptsUiTests : IDisposable
     private static IReadOnlyList<string> Shown(AutomationElement window) => window.AllById("ScriptName").Select(e => e.Text()).ToList();
 
     [Fact]
+    public void A_waited_script_takes_a_time_limit()
+    {
+        var window = StartWith(("GridLost", "slow.ps1", false));
+        Assert.Null(window.TryByName("Minutes to wait at most for slow.ps1")); // only for a script that is waited for
+
+        window.ByName("Wait until slow.ps1 finishes").SetChecked(true);
+        var limit = window.ByName("Minutes to wait at most for slow.ps1");
+        Assert.Equal("0", limit.Value());
+        limit.SetFocus();
+        limit.SetValue("15");
+        Ui.Until(() => (int?)_app.Settings()["Scripts"]!["GridLost"]![0]!["WaitLimitMinutes"] == 15, "the limit to be saved");
+    }
+
+    [Fact]
     public void Each_event_has_its_card_and_an_empty_one_says_so()
     {
         var window = StartWith();
