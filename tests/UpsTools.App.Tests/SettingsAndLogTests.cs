@@ -97,6 +97,21 @@ public sealed class SettingsAndLogTests : IDisposable
         Assert.Equal((@"C:\scripts\pause.ahk", "--now", false, true, true),
             (script.Path, script.Arguments, script.Enabled, script.WaitForExit, script.RunElevated));
         Assert.False(File.Exists(_store.FilePath + ".tmp"));
+        Assert.DoesNotContain("\"Power\"", json); // only built-in actions have these
+        Assert.DoesNotContain("\"CountdownSeconds\"", json);
+    }
+
+    [Fact]
+    public void Built_in_actions_round_trip_by_name()
+    {
+        var settings = new AppSettings();
+        settings.ScriptsFor(UpsEventKind.BatteryLow).Add(new ScriptAction { Power = PowerAction.ShutDown, CountdownSeconds = 90 });
+        _store.Save(settings);
+
+        Assert.Contains("\"Power\": \"ShutDown\"", File.ReadAllText(_store.FilePath));
+        var action = Assert.Single(_store.Load().ScriptsFor(UpsEventKind.BatteryLow));
+        Assert.Equal((PowerAction.ShutDown, 90, "Shut down"), (action.Power, action.CountdownSeconds, action.Name));
+        Assert.Equal("a.ps1", new ScriptAction { Path = @"C:\x\a.ps1" }.Name);
     }
 
     [Theory]

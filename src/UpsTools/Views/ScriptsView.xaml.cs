@@ -4,6 +4,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
+using UpsTools.Core;
 using UpsTools.ViewModels;
 
 namespace UpsTools.Views;
@@ -37,6 +38,23 @@ public partial class ScriptsView : UserControl
         if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
         foreach (var file in dialog.FileNames) group.Add(file);
     }
+
+    private void AddAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { ContextMenu: { } menu } button) return;
+        menu.DataContext = button.DataContext;
+        menu.PlacementTarget = button;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void AddPower_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: EventScriptsViewModel group, Tag: PowerAction power }) group.Add(power);
+    }
+
+    /// <summary>A number box shows the value in effect once it loses focus (its Tag is its <see cref="NumberSetting"/>).</summary>
+    private void Number_LostFocus(object sender, RoutedEventArgs e) => ((NumberSetting)((FrameworkElement)sender).Tag).Normalize();
 
     private async void RemoveScript_Click(object sender, RoutedEventArgs e)
     {

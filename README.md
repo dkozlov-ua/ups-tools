@@ -14,9 +14,13 @@ the NAS when the grid comes back.
     code, or it can't be started), the scripts after it are skipped, and a notification says so.
   - **Run as administrator**: the script runs elevated without a UAC prompt when the event fires, so it works with
     nobody at the PC (see [Scripts that run as administrator](#scripts-that-run-as-administrator)).
+  - **Add action** → *Sleep*, *Hibernate* or *Shut down*: no script needed. A window on top of everything counts down
+    first (60 s by default, 0–600), with *Cancel* and *… now*; with nobody at the PC, it runs out and the action goes
+    ahead. Cancelling skips the scripts after it. The scripts after *Sleep* or *Hibernate* run once the PC is back on.
+    *Shut down* closes apps even if they have unsaved work, which the empty battery would lose anyway.
   - When the grid comes back, the *Grid lost* and *Battery low* scripts that haven't started yet are skipped, e.g.
-    *Grid lost* → `wait 5 minutes` (waited for) → `hibernate` doesn't hibernate the PC after a 2-minute outage. When the
-    UPS answers again, the same goes for the *UPS unreachable* scripts.
+    *Grid lost* → `wait 5 minutes` (waited for) → `hibernate` doesn't hibernate the PC after a 2-minute outage, and a
+    countdown still running closes. When the UPS answers again, the same goes for the *UPS unreachable* scripts.
 - **Notifications**: a Windows notification for each event, e.g. *Grid lost — running on battery: Battery 87 % ·
   about 6 h 10 m left at 120 W*, naming the scripts it started. *Grid restored* says how long the outage lasted and
   replaces the *Grid lost* or *Battery low* notification; *UPS reachable again* replaces *UPS unreachable*. Clicking one
@@ -126,7 +130,8 @@ To support another manufacturer, implement `IUpsDriver` / `IUpsConnection` and r
   can keep running. The test suites run as such profiles and remove what they create.
 - **Simulated UPS.** With `UPSTOOLS_SIMULATOR` set to a JSON file, the simulator is the only UPS driver. Every poll
   reads the file, e.g. `{"GridPresent": false, "BatteryPercent": 80, "AcOutputW": 120}`; `{"Fail": "message"}` makes
-  polls fail (see `SimulatedUpsDriver`). Find UPS finds it while the file exists.
+  polls fail (see `SimulatedUpsDriver`). Find UPS finds it while the file exists. With the simulator, *Sleep*,
+  *Hibernate* and *Shut down* only write to the log.
 - **Administrator tasks.** The tests that register real scheduled tasks run only in an elevated shell; otherwise
   they are skipped.
 - **UI tests** start the app, click, type and drag, so they need the desktop to themselves while they run (about

@@ -42,7 +42,19 @@ public sealed class ScriptAction
     /// <summary>Names the script's administrator task (<see cref="ElevatedTasks"/>).</summary>
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
 
+    /// <summary>A built-in action instead of a script: <see cref="Path"/> is empty then.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PowerAction? Power { get; set; }
+
+    /// <summary>For a built-in action: how long the countdown before it lasts (<see cref="PowerRunner"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CountdownSeconds { get; set; }
+
     public string Path { get; set; } = "";
+
+    /// <summary>What logs and notifications call it: the script's file name, or the built-in action.</summary>
+    [JsonIgnore]
+    public string Name => Power is { } power ? power.Title() : System.IO.Path.GetFileName(Path);
     public string Arguments { get; set; } = "";
     public bool Enabled { get; set; } = true;
 

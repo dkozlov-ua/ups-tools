@@ -3,20 +3,26 @@ namespace UpsTools.Core;
 /// <summary>One script of an event, as <see cref="ScriptChain"/> sees it.</summary>
 /// <param name="Name">File name, for logs and notifications.</param>
 /// <param name="WaitForExit">The next script starts only after this one finished successfully.</param>
-public sealed record ScriptStep(string Name, bool WaitForExit);
+/// <param name="UndoneByStopping">
+/// Stopping the chain while it waits for this step means the step doesn't happen (e.g. a countdown before
+/// hibernating the PC), rather than that it keeps running on its own.
+/// </param>
+public sealed record ScriptStep(string Name, bool WaitForExit, bool UndoneByStopping = false);
 
 /// <summary>
 /// What running one script came to: for a script that is waited for, whether it finished successfully
 /// (exit code 0); for any other, whether it started.
 /// </summary>
-public readonly record struct StepResult(bool Ok, string? Problem = null)
+/// <param name="ByUser">It didn't happen because the user said so, e.g. cancelled a countdown: not a problem to report.</param>
+public readonly record struct StepResult(bool Ok, string? Problem = null, bool ByUser = false)
 {
     public static StepResult Success => new(true);
     public static StepResult Failure(string problem) => new(false, problem);
+    public static StepResult CancelledByUser => new(false, "cancelled", ByUser: true);
 }
 
-/// <summary>A script that couldn't be started, or that was waited for and failed.</summary>
-public sealed record FailedStep(int Index, string Name, string Problem);
+/// <summary>A script that couldn't be started, or that was waited for and failed (or was cancelled by the user).</summary>
+public sealed record FailedStep(int Index, string Name, string Problem, bool ByUser = false);
 
 /// <summary>
 /// Runs an event's scripts in their listed order. A script marked <see cref="ScriptStep.WaitForExit"/> must
@@ -42,8 +48,19 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
     /// <summary>The script the chain is waiting for right now.</summary>
     public string? Waiting { get; private set; }
 
+    /// <summary>The step the chain is waiting for right now.</summary>
+    public ScriptStep? WaitingStep => _waitingFor;
+
     /// <summary>Scripts not started yet; once the chain is done, the ones it skipped.</summary>
     public IReadOnlyList<string> Pending => Steps.Skip(_next).Select(s => s.Name).ToList();
+
+    /// <summary>
+    /// What stopping the chain now keeps from happening: <see cref="Pending"/>, after the step it is waiting for if
+    /// that one is <see cref="ScriptStep.UndoneByStopping"/>.
+    /// </summary>
+    public IReadOnlyList<string> Unstarted => _waitingFor is { UndoneByStopping: true } step ? [step.Name, .. Pending] : Pending;
+
+    private ScriptStep? _waitingFor;
 
     /// <summary>The script that was waited for and failed, so the ones after it were skipped.</summary>
     public FailedStep? StoppedAt { get; private set; }
@@ -75,7 +92,11 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
 
                 var index = _next++;
                 var step = Steps[index];
-                if (step.WaitForExit) Waiting = step.Name;
+                if (step.WaitForExit)
+                {
+                    Waiting = step.Name;
+                    _waitingFor = step;
+                }
 
                 StepResult result;
                 try
@@ -84,8 +105,9 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
                 }
                 catch (OperationCanceledException) when (cancel.IsCancellationRequested)
                 {
-                    // Stopped waiting; the script itself is still running.
-                    Started.Add(step.Name);
+                    // Stopped waiting: the script itself is still running, or, if undone by stopping, never happens.
+                    if (step.UndoneByStopping) _next = index;
+                    else Started.Add(step.Name);
                     Cancelled = true;
                     return;
                 }
@@ -96,6 +118,7 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
                 finally
                 {
                     Waiting = null;
+                    _waitingFor = null;
                 }
 
                 if (result.Ok)
@@ -104,7 +127,7 @@ public sealed class ScriptChain(IReadOnlyList<ScriptStep> steps)
                     continue;
                 }
 
-                var failed = new FailedStep(index, step.Name, result.Problem ?? "failed");
+                var failed = new FailedStep(index, step.Name, result.Problem ?? "failed", result.ByUser);
                 Failed.Add(failed);
                 if (step.WaitForExit)
                 {
@@ -138,9 +161,10 @@ public static class ScriptReport
         if (chain is not null)
         {
             var pending = chain.Pending;
-            var waiting = chain.Waiting is { } w && pending.Count > 0 ? w : null;
+            var countdown = chain.WaitingStep is { UndoneByStopping: true } c ? c.Name : null;
+            var waiting = countdown is null && chain.Waiting is { } w && pending.Count > 0 ? w : null;
             var started = chain.Started.ToList();
-            if (chain.Waiting is { } running && waiting is null) started.Add(running); // last one: nothing waits for it
+            if (countdown is null && chain.Waiting is { } running && waiting is null) started.Add(running); // last one: nothing waits for it
 
             if (started.Count > 0) parts.Add((parts.Count == 0 ? "Started " : "started ") + List(started));
 
@@ -148,7 +172,13 @@ public static class ScriptReport
             if (couldNot.Count > 0) parts.Add((parts.Count == 0 ? "Couldn't start " : "couldn't start ") + List(couldNot));
 
             if (chain.StoppedAt is { } stop)
-                parts.Add(chain.Skipped.Count > 0 ? $"{stop.Name} failed, so {List(chain.Skipped)} didn't run" : $"{stop.Name} failed");
+            {
+                var what = stop.ByUser ? $"{stop.Name} was cancelled" : $"{stop.Name} failed";
+                parts.Add(chain.Skipped.Count > 0 ? $"{what}, so {List(chain.Skipped)} didn't run" : what);
+            }
+            else if (countdown is not null)
+                parts.Add((parts.Count == 0 ? "Counting down to " : "counting down to ") + countdown +
+                          (pending.Count > 0 ? $", then {List(pending)}" : ""));
             else if (waiting is not null)
                 parts.Add((parts.Count == 0 ? "Waiting for " : "waiting for ") + $"{waiting}, then {List(pending)}");
         }
@@ -162,7 +192,7 @@ public static class ScriptReport
     /// <param name="label">What ran the scripts, e.g. "Grid lost" or "Manual run".</param>
     public static (string Title, string Body)? Problems(ScriptChain chain, string label)
     {
-        if (chain.StoppedAt is { } stop)
+        if (chain.StoppedAt is { } stop && !stop.ByUser)
         {
             var body = Capitalize(stop.Problem) +
                        (chain.Skipped.Count > 0 ? $", so {List(chain.Skipped)} didn't run." : ".");
@@ -171,9 +201,10 @@ public static class ScriptReport
             return ($"{label}: {stop.Name} failed", body);
         }
 
-        if (chain.Failed.Count == 0) return null;
-        return ($"{label}: couldn't start {List(chain.Failed.Select(f => f.Name).ToList())}",
-            string.Join(" ", chain.Failed.Select(f => $"{f.Name}: {f.Problem}.")));
+        var failed = chain.Failed.Where(f => !f.ByUser).ToList();
+        if (failed.Count == 0) return null;
+        return ($"{label}: couldn't start {List(failed.Select(f => f.Name).ToList())}",
+            string.Join(" ", failed.Select(f => $"{f.Name}: {f.Problem}.")));
     }
 
     public static string List(IReadOnlyList<string> names) => names.Count switch

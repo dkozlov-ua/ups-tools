@@ -375,6 +375,44 @@ public sealed class ScriptsViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Adding_a_built_in_action_gives_it_a_minute_of_countdown()
+    {
+        _group.Add(PowerAction.Hibernate);
+
+        var item = Assert.Single(_group.Items);
+        Assert.Equal(("Hibernate", PowerAction.Hibernate.Description(), true, true), (item.FileName, item.FullPath, item.Exists, item.IsPower));
+        Assert.Equal(("60", 60), (item.Countdown.Text, item.Model.CountdownSeconds));
+        Assert.Equal("", item.Model.Path);
+        Assert.False(item.CanRepair);
+        Assert.Equal(1, _saves);
+        Assert.Equal([PowerAction.Hibernate], _group.EnabledActions.Select(a => a.Power));
+    }
+
+    [Theory]
+    [InlineData("15", 15)]
+    [InlineData("0", 0)]
+    [InlineData("9999", 600)]
+    public void The_countdown_of_a_built_in_action_saves_clamped(string text, int seconds)
+    {
+        _group.Add(PowerAction.ShutDown);
+        var item = _group.Items[0];
+
+        item.Countdown.Text = text;
+        item.Countdown.Normalize();
+
+        Assert.Equal(seconds, item.Model.CountdownSeconds);
+        Assert.Equal(seconds.ToString(), item.Countdown.Text);
+        Assert.Equal(2, _saves);
+    }
+
+    [Fact]
+    public void A_script_is_not_a_built_in_action()
+    {
+        _group.Add(Script("a.ps1"));
+        Assert.False(_group.Items[0].IsPower);
+    }
+
+    [Fact]
     public void A_missing_file_is_flagged()
     {
         _group.Add(@"C:\nowhere\gone.bat");

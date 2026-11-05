@@ -3,6 +3,7 @@ using System.Windows.Threading;
 using UpsTools.Core;
 using UpsTools.Services;
 using UpsTools.ViewModels;
+using UpsTools.Views;
 
 namespace UpsTools;
 
@@ -13,6 +14,7 @@ public sealed class AppController
     private readonly SettingsStore _store;
     private readonly UpsDrivers _drivers;
     private readonly Func<ScriptAction, string, CancellationToken, Task<StepResult>> _runScript;
+    private readonly PowerRunner _power;
     private UpsMonitor? _monitor;
     private ITray? _tray;
     private INotifications? _notifier;
@@ -27,8 +29,14 @@ public sealed class AppController
     /// <param name="log">The log; its folder holds the settings too.</param>
     /// <param name="drivers">The UPS drivers: the real ones (<see cref="UpsDrivers"/>) unless a test says otherwise.</param>
     /// <param name="runScript">Runs a script: <see cref="ScriptRunner.RunAsync"/> unless a test says otherwise.</param>
+    /// <param name="power">
+    /// Sleeps, hibernates or shuts down the PC: for real only with the real UPS drivers, otherwise (the simulator, a
+    /// test's drivers) it just logs.
+    /// </param>
+    /// <param name="countdown">The countdown before a power action: <see cref="CountdownWindow"/> unless a test says otherwise.</param>
     internal AppController(Dispatcher ui, AppLog log, IReadOnlyList<IUpsDriver>? drivers = null,
-        Func<ScriptAction, string, CancellationToken, Task<StepResult>>? runScript = null)
+        Func<ScriptAction, string, CancellationToken, Task<StepResult>>? runScript = null,
+        IPowerControl? power = null, PowerCountdown? countdown = null)
     {
         _ui = ui;
         Log = log;
@@ -37,6 +45,9 @@ public sealed class AppController
         _drivers = drivers is null ? new UpsDrivers(Log.Info) : new UpsDrivers(drivers);
         Elevated = new ElevatedTasks(Log);
         _runScript = runScript ?? new ScriptRunner(Log, Elevated).RunAsync;
+        _power = new PowerRunner(Log,
+            power ?? (drivers is null && SimulatedUpsDriver.FromEnvironment() is null ? new WindowsPower() : new SimulatedPower(Log)),
+            countdown ?? CountdownWindow.ShowAsync);
 
         Dashboard = new DashboardViewModel();
         foreach (var entry in Log.Recent) Dashboard.AddActivity(entry);
@@ -182,11 +193,13 @@ public sealed class AppController
         if (actions.Count == 0) Log.Info($"{reason}: no scripts to run");
         if (kind is { } k) StopChain(k, $"{reason} started again");
 
-        var chain = new ScriptChain([.. actions.Select(a => new ScriptStep(System.IO.Path.GetFileName(a.Path), a.WaitForExit))]);
+        // A built-in action is waited for (its countdown, and sleep until the PC wakes up), and stopping the chain stops its countdown.
+        var chain = new ScriptChain([.. actions.Select(a => new ScriptStep(a.Name, a.WaitForExit || a.Power is not null, UndoneByStopping: a.Power is not null))]);
         var cancel = new CancellationTokenSource();
         if (kind is { } key) _chains[key] = (chain, cancel);
 
-        var run = chain.RunAsync((i, _, ct) => _runScript(actions[i], reason, ct), cancel.Token);
+        var run = chain.RunAsync((i, _, ct) => actions[i].Power is null ? _runScript(actions[i], reason, ct) : _power.RunAsync(actions[i], reason, ct),
+            cancel.Token);
         _ = FinishAsync();
         return chain;
 
@@ -211,7 +224,7 @@ public sealed class AppController
     private IReadOnlyList<string>? StopChain(UpsEventKind kind, string why)
     {
         if (!_chains.Remove(kind, out var running) || running.Chain.Done) return null;
-        var skipped = running.Chain.Pending;
+        var skipped = running.Chain.Unstarted;
         running.Cancel.Cancel();
         Log.Info(skipped.Count > 0
             ? $"{why}: stopped the {kind.Title()} scripts; {ScriptReport.List(skipped)} won't run"

@@ -137,3 +137,42 @@ internal sealed class FakeScripts
 
     public IReadOnlyList<string> Names => Ran.Select(r => r.Name).ToList();
 }
+
+/// <summary>Records the power actions instead of doing them; one can be made to fail.</summary>
+internal sealed class FakePower : IPowerControl
+{
+    public ConcurrentQueue<PowerAction> Done { get; } = new();
+    public string? Refuse { get; set; }
+
+    public void Do(PowerAction action)
+    {
+        if (Refuse is { } why) throw new InvalidOperationException(why);
+        Done.Enqueue(action);
+    }
+}
+
+/// <summary>Plays the countdown window: each countdown waits until the test answers it.</summary>
+internal sealed class FakeCountdown
+{
+    private TaskCompletionSource<bool>? _shown;
+
+    public List<(PowerAction Action, TimeSpan Delay, string Reason)> Shown { get; } = [];
+    public bool IsShowing => _shown is { Task.IsCompleted: false };
+    public bool WasStopped { get; private set; }
+
+    public Task<bool> ShowAsync(PowerAction action, TimeSpan delay, string reason, CancellationToken cancel)
+    {
+        Shown.Add((action, delay, reason));
+        var shown = _shown = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        cancel.Register(() =>
+        {
+            if (shown.TrySetCanceled(cancel)) WasStopped = true;
+        });
+        return shown.Task;
+    }
+
+    /// <summary>The time ran out, or "now" was clicked.</summary>
+    public void GoAhead() => _shown!.SetResult(true);
+
+    public void Cancel() => _shown!.SetResult(false);
+}

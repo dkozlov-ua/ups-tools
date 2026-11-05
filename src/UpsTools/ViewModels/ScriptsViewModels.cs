@@ -29,9 +29,14 @@ public sealed class EventScriptsViewModel : ObservableObject
     public bool IsEmpty => Items.Count == 0;
     public IEnumerable<ScriptAction> EnabledActions => _model.Where(a => a.Enabled);
 
-    public void Add(string path)
+    public void Add(string path) => Add(new ScriptAction { Path = path });
+
+    /// <summary>Adds a built-in action: sleep, hibernate or shut down, after a countdown.</summary>
+    public void Add(PowerAction power) =>
+        Add(new ScriptAction { Power = power, CountdownSeconds = PowerRunner.DefaultCountdownSeconds });
+
+    private void Add(ScriptAction action)
     {
-        var action = new ScriptAction { Path = path };
         _model.Add(action);
         Items.Add(new ScriptItemViewModel(action, _elevated, _changed));
         _changed();
@@ -75,14 +80,31 @@ public sealed class ScriptItemViewModel : ObservableObject
         Model = model;
         _elevated = elevated;
         _changed = changed;
+        Countdown = new NumberSetting(0, PowerRunner.MaxCountdownSeconds,
+            () => Model.CountdownSeconds ?? PowerRunner.DefaultCountdownSeconds,
+            seconds =>
+            {
+                Model.CountdownSeconds = seconds;
+                changed();
+            });
         CheckElevation();
     }
 
     public ScriptAction Model { get; }
 
-    public string FileName => Path.GetFileName(Model.Path);
-    public string FullPath => Model.Path;
-    public bool Exists => File.Exists(Model.Path);
+    /// <summary>The script's file name, or the built-in action's name.</summary>
+    public string FileName => Model.Name;
+
+    /// <summary>The script's path, or what the built-in action does.</summary>
+    public string FullPath => Model.Power is { } power ? power.Description() : Model.Path;
+
+    public bool Exists => Model.Power is not null || File.Exists(Model.Path);
+
+    /// <summary>A built-in action rather than a script: it has a countdown instead of arguments and options.</summary>
+    public bool IsPower => Model.Power is not null;
+
+    /// <summary>For a built-in action: seconds of countdown before it, 0 for none.</summary>
+    public NumberSetting Countdown { get; }
 
     public bool Enabled
     {

@@ -19,6 +19,8 @@ public sealed class AppControllerTests : IDisposable
     private readonly FakeTray _tray = new();
     private readonly FakeNotifications _notes = new();
     private readonly FakeScripts _scripts = new();
+    private readonly FakePower _power = new();
+    private readonly FakeCountdown _countdown = new();
     private AppController? _controller;
 
     public AppControllerTests()
@@ -36,6 +38,8 @@ public sealed class AppControllerTests : IDisposable
     private static ScriptAction Script(string name, bool wait = false, bool enabled = true) =>
         new() { Path = $@"C:\scripts\{name}", WaitForExit = wait, Enabled = enabled };
 
+    private static ScriptAction Power(PowerAction power, int countdown = 60) => new() { Power = power, CountdownSeconds = countdown };
+
     private async Task<AppController> Start(Action<AppSettings>? seed = null, bool paired = true, bool monitor = true)
     {
         var settings = new AppSettings { Ups = paired ? FakeUps.Paired : null };
@@ -44,7 +48,7 @@ public sealed class AppControllerTests : IDisposable
 
         _controller = await UiThread.Run(() =>
         {
-            var controller = new AppController(UiThread.Dispatcher, _log, [_ups], _scripts.RunAsync);
+            var controller = new AppController(UiThread.Dispatcher, _log, [_ups], _scripts.RunAsync, _power, _countdown.ShowAsync);
             controller.Settings.UpdatePeriodSeconds = 0; // the scripted UPS sets the pace
             controller.AttachTray(_tray, _notes);
             if (monitor) controller.StartMonitoring();
@@ -236,6 +240,87 @@ public sealed class AppControllerTests : IDisposable
         Assert.Equal("Stopped the Grid lost scripts before sleep.ps1; stopped the Battery low scripts before hibernate.ps1",
             _notes.Notices[2].Footnote);
         Assert.Equal(["wait-30-min.ps1", "save.ps1"], _scripts.Names);
+    }
+
+    [Fact]
+    public async Task Battery_low_counts_down_then_hibernates_and_runs_what_follows()
+    {
+        await Start(s => s.ScriptsFor(UpsEventKind.BatteryLow).AddRange([Script("save.ps1"), Power(PowerAction.Hibernate, 30), Script("after.ps1")]));
+        await Online();
+        await GridLost(15); // lost and low at once
+
+        await UiUntil(() => _notes.All.Count == 2, "Battery low");
+        Assert.Equal("Started save.ps1; counting down to Hibernate, then after.ps1", _notes.Notices[1].Footnote);
+        Assert.Equal((PowerAction.Hibernate, TimeSpan.FromSeconds(30), "Battery low"), Assert.Single(_countdown.Shown));
+        Assert.Empty(_power.Done);
+
+        _countdown.GoAhead();
+        await Wait.Until(() => _scripts.Names.Contains("after.ps1"));
+        Assert.Equal([PowerAction.Hibernate], _power.Done);
+        Assert.Equal(["save.ps1", "after.ps1"], _scripts.Names); // the built-in action isn't a script
+        Assert.Contains(_log.Recent, e => e.Message == "Battery low: Hibernating the PC");
+        await Task.Delay(100);
+        Assert.Equal(2, _notes.All.Count);
+    }
+
+    [Fact]
+    public async Task Grid_restored_during_the_countdown_stops_it()
+    {
+        await Start(s => s.ScriptsFor(UpsEventKind.BatteryLow).Add(Power(PowerAction.ShutDown)));
+        await Online();
+        await GridLost(15);
+        await Wait.Until(() => _countdown.IsShowing);
+
+        _ups.Answer(true, 16);
+        await UiUntil(() => _notes.All.Count == 3, "Grid restored");
+
+        Assert.Equal("Stopped the Battery low scripts before Shut down", _notes.Notices[2].Footnote);
+        Assert.True(_countdown.WasStopped);
+        Assert.Contains(_log.Recent, e => e.Message == "Grid restored: stopped the Battery low scripts; Shut down won't run");
+        await Task.Delay(100);
+        Assert.Empty(_power.Done);
+        Assert.Equal(3, _notes.All.Count);
+    }
+
+    [Fact]
+    public async Task Cancelling_the_countdown_skips_the_rest_without_a_problem_notification()
+    {
+        await Start(s => s.ScriptsFor(UpsEventKind.BatteryLow).AddRange([Power(PowerAction.Sleep), Script("after.ps1")]));
+        await Online();
+        await GridLost(15);
+        await Wait.Until(() => _countdown.IsShowing);
+
+        _countdown.Cancel();
+        await UiUntil(() => _log.Recent.Any(e => e.Message == "Battery low: Sleep was cancelled"), "the cancel");
+        await Task.Delay(100);
+
+        Assert.Empty(_power.Done);
+        Assert.Empty(_scripts.Names);
+        Assert.Equal(2, _notes.All.Count); // Grid lost and Battery low; nothing about the cancel
+    }
+
+    [Fact]
+    public async Task A_power_action_that_fails_is_reported()
+    {
+        _power.Refuse = "hibernation is turned off";
+        var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).AddRange([Power(PowerAction.Hibernate, 0), Script("after.ps1")]), monitor: false);
+
+        await UiThread.Run(() => controller.RunScripts(controller.EventScripts[0], "Manual run"));
+        await UiUntil(() => _notes.All.Count == 1);
+
+        Assert.Equal(("Manual run: Hibernate failed", "Hibernation is turned off, so after.ps1 didn't run."), (_notes.All[0].Title, _notes.All[0].Body));
+        Assert.Empty(_countdown.Shown);
+    }
+
+    [Fact]
+    public async Task Run_now_on_a_power_action_counts_down_too()
+    {
+        var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).Add(Power(PowerAction.ShutDown, 10)), monitor: false);
+
+        await UiThread.Run(() => controller.RunScript(controller.Settings.ScriptsFor(UpsEventKind.GridLost)[0], "Manual run"));
+        Assert.Equal((PowerAction.ShutDown, TimeSpan.FromSeconds(10), "Manual run"), Assert.Single(_countdown.Shown));
+        _countdown.GoAhead();
+        await Wait.Until(() => _power.Done.Count == 1);
     }
 
     [Fact]

@@ -2,13 +2,14 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:UpsTools.ViewModels"
+             xmlns:core="clr-namespace:UpsTools.Core;assembly=UpsTools.Core"
              AllowDrop="True" PreviewDragOver="View_PreviewDragOver" PreviewDrop="View_PreviewDrop">
     <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="10,14,10,12">
             <StackPanel Margin="6,0,6,6">
                 <TextBlock Text="Scripts" Style="{StaticResource PageTitle}" />
                 <TextBlock Style="{StaticResource Detail}" FontSize="13" Margin="0,2,0,0"
-                           Text="Run scripts when the UPS state changes, in the listed order (drag a script by its handle to reorder). A script set to wait must finish successfully before the next one starts; if it fails, the rest are skipped. When the grid comes back, the Grid lost and Battery low scripts that haven't started yet are skipped; when the UPS answers again, the UPS unreachable ones. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
+                           Text="Run scripts when the UPS state changes, in the listed order (drag a script by its handle to reorder). A script set to wait must finish successfully before the next one starts; if it fails, the rest are skipped. Add action puts the PC to sleep, hibernates or shuts it down after a countdown you can cancel. When the grid comes back, the Grid lost and Battery low scripts that haven't started yet are skipped; when the UPS answers again, the UPS unreachable ones. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
             </StackPanel>
 
             <ItemsControl ItemsSource="{Binding EventScripts}">
@@ -21,6 +22,17 @@
                                         <Button Content="Run now" Click="RunEvent_Click" Margin="0,0,8,0"
                                                 AutomationProperties.Name="{Binding Title, StringFormat=Run the {0} scripts now}"
                                                 ToolTip="Run all enabled scripts of this event now" />
+                                        <Button Content="Add action ▾" Click="AddAction_Click" Margin="0,0,8,0"
+                                                AutomationProperties.Name="{Binding Title, StringFormat=Add an action to {0}}"
+                                                ToolTip="Sleep, hibernate or shut down the PC, after a countdown">
+                                            <Button.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Sleep" Tag="{x:Static core:PowerAction.Sleep}" Click="AddPower_Click" />
+                                                    <MenuItem Header="Hibernate" Tag="{x:Static core:PowerAction.Hibernate}" Click="AddPower_Click" />
+                                                    <MenuItem Header="Shut down" Tag="{x:Static core:PowerAction.ShutDown}" Click="AddPower_Click" />
+                                                </ContextMenu>
+                                            </Button.ContextMenu>
+                                        </Button>
                                         <Button Content="Add script…" Click="AddScript_Click" Style="{DynamicResource AccentButtonStyle}"
                                                 AutomationProperties.Name="{Binding Title, StringFormat=Add a script to {0}}" />
                                     </StackPanel>
@@ -82,6 +94,9 @@
                                                             <TextBlock x:Name="Missing" FontFamily="{StaticResource IconFont}" Text="&#xE7BA;"
                                                                        Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,6,0"
                                                                        Visibility="Collapsed" ToolTip="File not found" />
+                                                            <TextBlock x:Name="PowerIcon" FontFamily="{StaticResource IconFont}" Text="&#xE7E8;"
+                                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,6,0"
+                                                                       Visibility="Collapsed" ToolTip="Built-in action" />
                                                             <TextBlock x:Name="Shield" FontFamily="{StaticResource IconFont}" Text="&#xEA18;"
                                                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,6,0"
                                                                        Visibility="Collapsed" ToolTip="Runs as administrator" />
@@ -92,10 +107,20 @@
                                                                    TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}" />
                                                     </StackPanel>
 
-                                                    <TextBox Grid.Column="3" Text="{Binding Arguments, UpdateSourceTrigger=LostFocus}"
+                                                    <StackPanel x:Name="CountdownBox" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center"
+                                                                Visibility="Collapsed">
+                                                        <TextBox Width="70" HorizontalContentAlignment="Right"
+                                                                 Text="{Binding Countdown.Text, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Tag="{Binding Countdown}" LostFocus="Number_LostFocus"
+                                                                 AutomationProperties.Name="{Binding FileName, StringFormat=Countdown before {0} in seconds}"
+                                                                 ToolTip="Seconds to count down first, with a Cancel button (0–600; 0: none)" />
+                                                        <TextBlock Text="s countdown" Style="{StaticResource Caption}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                    </StackPanel>
+
+                                                    <TextBox x:Name="ArgumentsBox" Grid.Column="3" Text="{Binding Arguments, UpdateSourceTrigger=LostFocus}"
                                                              AutomationProperties.Name="{Binding FileName, StringFormat=Arguments for {0}}"
                                                              VerticalAlignment="Center" ToolTip="Command-line arguments (optional)" />
-                                                    <TextBlock Grid.Column="3" Text="Arguments" IsHitTestVisible="False" Margin="12,0,0,0"
+                                                    <TextBlock x:Name="ArgumentsHint" Grid.Column="3" Text="Arguments" IsHitTestVisible="False" Margin="12,0,0,0"
                                                                VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorTertiaryBrush}">
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock">
@@ -116,7 +141,7 @@
                                                             Click="RemoveScript_Click" ToolTip="Remove"
                                                             AutomationProperties.Name="{Binding FileName, StringFormat=Remove {0}}" />
 
-                                                    <WrapPanel Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" Margin="0,4,0,0">
+                                                    <WrapPanel x:Name="Options" Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" Margin="0,4,0,0">
                                                         <CheckBox IsChecked="{Binding WaitForExit}" MinWidth="0" Margin="0,0,24,0"
                                                                   AutomationProperties.Name="{Binding FileName, StringFormat=Wait until {0} finishes}"
                                                                   Content="Wait until it finishes"
@@ -148,6 +173,13 @@
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding RunElevated}" Value="True">
                                                     <Setter TargetName="Shield" Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsPower}" Value="True">
+                                                    <Setter TargetName="PowerIcon" Property="Visibility" Value="Visible" />
+                                                    <Setter TargetName="CountdownBox" Property="Visibility" Value="Visible" />
+                                                    <Setter TargetName="ArgumentsBox" Property="Visibility" Value="Collapsed" />
+                                                    <Setter TargetName="ArgumentsHint" Property="Visibility" Value="Collapsed" />
+                                                    <Setter TargetName="Options" Property="Visibility" Value="Collapsed" />
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
