@@ -4,7 +4,7 @@ using Forms = System.Windows.Forms;
 
 namespace UpsTools.Services;
 
-/// <summary>Notification-area icon with a coloured status dot and a small context menu.</summary>
+/// <summary>Notification-area icon, coloured by the UPS state, with a small context menu.</summary>
 public sealed class TrayIcon : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
@@ -15,7 +15,7 @@ public sealed class TrayIcon : IDisposable
     {
         using var stream = StatusArt.OpenAppIcon();
         using var baseIcon = new Drawing.Icon(stream, Forms.SystemInformation.SmallIconSize);
-        foreach (var state in Enum.GetValues<TrayState>()) _icons[state] = WithStatusDot(baseIcon, state);
+        foreach (var state in Enum.GetValues<TrayState>()) _icons[state] = Recolored(baseIcon, state);
 
         _statusItem = new Forms.ToolStripMenuItem("Starting…") { Enabled = false };
         var menu = new Forms.ContextMenuStrip();
@@ -48,10 +48,10 @@ public sealed class TrayIcon : IDisposable
     public void Notify(string title, string text, bool warning = false) =>
         _icon.ShowBalloonTip(5000, title, text, warning ? Forms.ToolTipIcon.Warning : Forms.ToolTipIcon.Info);
 
-    private static Drawing.Icon WithStatusDot(Drawing.Icon baseIcon, TrayState state)
+    private static Drawing.Icon Recolored(Drawing.Icon baseIcon, TrayState state)
     {
         using var bitmap = baseIcon.ToBitmap();
-        StatusArt.AddDot(bitmap, state, 0.5f);
+        StatusArt.Recolor(bitmap, state);
 
         var handle = bitmap.GetHicon();
         try
