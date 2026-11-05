@@ -90,6 +90,12 @@ public sealed class ConfigurationUiTests : IDisposable
         delay.SetFocus();
         delay.SetValue("90");
         Ui.Until(() => (int)_app.Settings()["GridLostDelaySeconds"]! == 90, "the delay to be saved");
+
+        var unreachable = window.ByName("Battery low after this many minutes unreachable on battery");
+        Assert.Equal("0", unreachable.Value());
+        unreachable.SetFocus();
+        unreachable.SetValue("5");
+        Ui.Until(() => (int)_app.Settings()["UnreachableOnBatteryMinutes"]! == 5, "the unreachable limit to be saved");
     }
 
     [Fact]

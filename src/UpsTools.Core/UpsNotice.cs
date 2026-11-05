@@ -28,8 +28,10 @@ public sealed record UpsNotice(UpsEventKind Kind, NoticeTone Tone, string Title,
     /// <param name="outage">For "Grid restored": how long the UPS ran on battery, when known.</param>
     /// <param name="scripts">This event's scripts, as they stand when the notification goes out.</param>
     /// <param name="stopped">The other events' scripts that this event stopped, and the ones of them it skipped.</param>
+    /// <param name="unreachable">For "Battery low": it fired because the UPS stopped answering on battery; <paramref name="status"/> is its last reading.</param>
     public static UpsNotice For(UpsEventKind kind, UpsStatus? status, TimeSpan? outage = null,
-        ScriptChain? scripts = null, IReadOnlyList<(UpsEventKind Kind, IReadOnlyList<string> Skipped)>? stopped = null)
+        ScriptChain? scripts = null, IReadOnlyList<(UpsEventKind Kind, IReadOnlyList<string> Skipped)>? stopped = null,
+        bool unreachable = false)
     {
         var footnote = ScriptReport.Footnote(scripts, stopped);
         var battery = status?.BatteryPercent is { } soc ? $"Battery {soc} %" : null;
@@ -40,6 +42,16 @@ public sealed record UpsNotice(UpsEventKind Kind, NoticeTone Tone, string Title,
             {
                 var body = Join(battery, Runtime(status)) ?? "The UPS switched to battery.";
                 return new(kind, NoticeTone.Warning, "Grid lost — running on battery", body, footnote);
+            }
+
+            case UpsEventKind.BatteryLow when unreachable:
+            {
+                var last = status is null
+                    ? ""
+                    : $" Its last reading, at {status.Timestamp.ToLocalTime().ToString("t", CultureInfo.CurrentCulture)}: " +
+                      (Join(battery, Runtime(status)) ?? "no charge reported") + ".";
+                var body = "The UPS stopped answering while on battery, so its charge isn't known." + last;
+                return new(kind, NoticeTone.Problem, "Battery low — UPS unreachable", body, footnote);
             }
 
             case UpsEventKind.BatteryLow:

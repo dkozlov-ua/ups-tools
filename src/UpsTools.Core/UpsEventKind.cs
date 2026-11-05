@@ -35,7 +35,7 @@ public static class UpsEventKindExtensions
     public static string Description(this UpsEventKind kind) => kind switch
     {
         UpsEventKind.GridLost => "Mains power at the UPS input disappeared; the UPS is running on battery.",
-        UpsEventKind.BatteryLow => "On battery, the charge or the time left reached its limit (set in Configuration). Once per outage.",
+        UpsEventKind.BatteryLow => "On battery, the charge or the time left reached its limit, or the UPS stopped answering (set in Configuration). Once per outage.",
         UpsEventKind.GridRestored => "Mains power at the UPS input came back.",
         UpsEventKind.UpsUnreachable => $"The UPS did not answer {UpsStateTracker.DefaultFailuresBeforeUnreachable} polls in a row.",
         UpsEventKind.UpsReachable => "The UPS answered again after being unreachable.",

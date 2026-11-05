@@ -331,4 +331,91 @@ public class UpsStateTrackerTests
         Assert.Equal(TimeSpan.Zero, new EventRules(GridLostDelaySeconds: -5).GridLostDelay);
         Assert.Equal(TimeSpan.FromSeconds(45), new EventRules(GridLostDelaySeconds: 45).GridLostDelay);
     }
+
+    // ---- unreachable on battery
+
+    private static UpsStateTracker Unreachable(int minutes) =>
+        new(failuresBeforeUnreachable: 1) { Rules = new EventRules(BatteryLowPercent: 20, BatteryLowMinutes: 0, UnreachableOnBatteryMinutes: minutes) };
+
+    [Fact]
+    public void Unreachable_on_battery_for_the_limit_counts_as_battery_low_once()
+    {
+        var tracker = Unreachable(5);
+        tracker.OnSuccess(At(0, true));
+        tracker.OnSuccess(At(10, false, 60));
+
+        Assert.Equal([UpsEventKind.UpsUnreachable], tracker.OnFailure(T0.AddSeconds(20)));
+        Assert.Equal(T0.AddSeconds(20).AddMinutes(5), tracker.BatteryLowDue);
+        Assert.Empty(tracker.OnFailure(T0.AddSeconds(20).AddMinutes(4)));
+        Assert.Equal([UpsEventKind.BatteryLow], tracker.OnFailure(T0.AddSeconds(20).AddMinutes(5)));
+        Assert.Null(tracker.BatteryLowDue);
+        Assert.Empty(tracker.OnFailure(T0.AddMinutes(30)));
+
+        // Answering again, still on battery and low: it already fired this outage.
+        Assert.Equal([UpsEventKind.UpsReachable], tracker.OnSuccess(At(1900, false, 10)));
+    }
+
+    [Fact]
+    public void Answering_in_time_cancels_it()
+    {
+        var tracker = Unreachable(5);
+        tracker.OnSuccess(At(0, true));
+        tracker.OnSuccess(At(10, false, 60));
+        tracker.OnFailure(T0.AddMinutes(1));
+
+        Assert.Equal([UpsEventKind.UpsReachable], tracker.OnSuccess(At(120, false, 59)));
+        Assert.Null(tracker.BatteryLowDue);
+
+        // The next time it is unreachable, the time starts again.
+        tracker.OnFailure(T0.AddMinutes(10));
+        Assert.Empty(tracker.OnFailure(T0.AddMinutes(14)));
+        Assert.Equal([UpsEventKind.BatteryLow], tracker.OnFailure(T0.AddMinutes(15)));
+    }
+
+    [Fact]
+    public void Unreachable_on_grid_power_is_not_battery_low()
+    {
+        var tracker = Unreachable(1);
+        tracker.OnSuccess(At(0, true));
+        tracker.OnFailure(T0.AddMinutes(1));
+        Assert.Null(tracker.BatteryLowDue);
+        Assert.Empty(tracker.OnFailure(T0.AddHours(5)));
+    }
+
+    [Fact]
+    public void Unreachable_while_a_grid_loss_is_waited_out_is_not_on_battery_yet()
+    {
+        var tracker = new UpsStateTracker(failuresBeforeUnreachable: 1) { Rules = new EventRules(GridLostDelaySeconds: 60, UnreachableOnBatteryMinutes: 1) };
+        tracker.OnSuccess(At(0, true));
+        tracker.OnSuccess(At(10, false));
+        tracker.OnFailure(T0.AddSeconds(20));
+        Assert.Empty(tracker.OnFailure(T0.AddHours(1)));
+    }
+
+    [Fact]
+    public void Off_it_never_fires_and_a_low_battery_already_reported_does_not_fire_again()
+    {
+        var off = Unreachable(0);
+        off.OnSuccess(At(0, true));
+        off.OnSuccess(At(10, false, 60));
+        off.OnFailure(T0.AddMinutes(1));
+        Assert.Null(off.BatteryLowDue);
+        Assert.Empty(off.OnFailure(T0.AddHours(5)));
+
+        var low = Unreachable(1);
+        low.OnSuccess(At(0, true));
+        Assert.Equal([UpsEventKind.GridLost, UpsEventKind.BatteryLow], low.OnSuccess(At(10, false, 15)));
+        low.OnFailure(T0.AddMinutes(1));
+        Assert.Null(low.BatteryLowDue);
+        Assert.Empty(low.OnFailure(T0.AddHours(1)));
+    }
+
+    [Fact]
+    public void Starting_unreachable_during_an_outage_seen_on_the_first_reading_counts()
+    {
+        var tracker = Unreachable(2);
+        tracker.OnSuccess(At(0, false, 50)); // baseline: on battery
+        tracker.OnFailure(T0.AddMinutes(1));
+        Assert.Equal([UpsEventKind.BatteryLow], tracker.OnFailure(T0.AddMinutes(3)));
+    }
 }

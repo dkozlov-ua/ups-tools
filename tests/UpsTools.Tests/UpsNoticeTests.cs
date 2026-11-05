@@ -102,6 +102,20 @@ public class UpsNoticeTests
     }
 
     [Fact]
+    public void Battery_low_from_an_unreachable_ups_says_so_with_its_last_reading()
+    {
+        var notice = UpsNotice.For(UpsEventKind.BatteryLow, OnBattery, unreachable: true);
+        Assert.Equal((NoticeTone.Problem, "Battery low — UPS unreachable", true), (notice.Tone, notice.Title, notice.Important));
+        Assert.StartsWith("The UPS stopped answering while on battery, so its charge isn't known. Its last reading, at ", notice.Body);
+        Assert.EndsWith(": Battery 87 % · about 6 h 10 m left at 120 W.", notice.Body);
+
+        Assert.Equal("The UPS stopped answering while on battery, so its charge isn't known.",
+            UpsNotice.For(UpsEventKind.BatteryLow, null, unreachable: true).Body);
+        Assert.EndsWith(": no charge reported.",
+            UpsNotice.For(UpsEventKind.BatteryLow, new UpsStatus { Timestamp = DateTimeOffset.UnixEpoch }, unreachable: true).Body);
+    }
+
+    [Fact]
     public void Grid_restored_names_each_event_whose_scripts_it_stopped()
     {
         var notice = UpsNotice.For(UpsEventKind.GridRestored, null, null, null,

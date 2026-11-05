@@ -304,7 +304,8 @@ public sealed class AppController
 
         // "UPS unreachable" comes without a reading; the last good one says when the UPS last answered.
         if (notify)
-            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, chain, stopped), DeviceTitle);
+            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, chain, stopped,
+                unreachable: kind == UpsEventKind.BatteryLow && status is null), DeviceTitle);
     }
 
     private void UpdateTray()

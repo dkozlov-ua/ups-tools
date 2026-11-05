@@ -60,9 +60,11 @@ public class UpsMonitorTests
     private readonly ConcurrentQueue<UpsEvent> _raised = new();
     private readonly ConcurrentQueue<string> _log = new();
 
+    private DateTimeOffset _now = DateTimeOffset.Now;
+
     private UpsMonitor Start(TimeSpan? period = null, TimeSpan? readTimeout = null)
     {
-        var monitor = new UpsMonitor(_ups, period ?? TimeSpan.Zero, readTimeout);
+        var monitor = new UpsMonitor(_ups, period ?? TimeSpan.Zero, readTimeout, () => _now);
         monitor.StatusUpdated += _statuses.Enqueue;
         monitor.EventRaised += e => _events.Enqueue((e.Kind, e.Status));
         monitor.EventRaised += _raised.Enqueue;
@@ -164,6 +166,26 @@ public class UpsMonitorTests
         Assert.Equal(_statuses.ElementAt(1).Timestamp, _raised.First().GridGoneSince);
         Assert.Null(_raised.Last().GridGoneSince);
         Assert.Empty(_log);
+    }
+
+    [Fact]
+    public async Task Unreachable_on_battery_for_long_enough_raises_battery_low()
+    {
+        await using var monitor = Start();
+        monitor.Rules = new EventRules(UnreachableOnBatteryMinutes: 5);
+        _ups.Answer(true);
+        _ups.Answer(false, 60);
+        _ups.Fail();
+        _ups.Fail();
+        _ups.Fail();
+        await Wait.Until(() => _events.Count == 2);
+        Assert.Equal([UpsEventKind.GridLost, UpsEventKind.UpsUnreachable], _events.Select(e => e.Kind));
+        Assert.Contains("The UPS is unreachable on battery; Battery low fires if it stays unreachable for 5 min", _log);
+
+        _now += TimeSpan.FromMinutes(5);
+        _ups.Fail();
+        await Wait.Until(() => _events.Count == 3);
+        Assert.Equal((UpsEventKind.BatteryLow, (UpsStatus?)null), _events.Last());
     }
 
     [Fact]

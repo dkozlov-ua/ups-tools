@@ -7,7 +7,12 @@ namespace UpsTools.Core;
 /// "Grid lost" only once the grid has been gone this long: a shorter blip fires nothing; 0: at the first reading
 /// without it.
 /// </param>
-public sealed record EventRules(int BatteryLowPercent = 20, int BatteryLowMinutes = 10, int GridLostDelaySeconds = 0)
+/// <param name="UnreachableOnBatteryMinutes">
+/// "Battery low" once the UPS has been unreachable this long while on battery: its charge can't be known any
+/// more; 0: never.
+/// </param>
+public sealed record EventRules(int BatteryLowPercent = 20, int BatteryLowMinutes = 10, int GridLostDelaySeconds = 0,
+    int UnreachableOnBatteryMinutes = 0)
 {
     public TimeSpan GridLostDelay => TimeSpan.FromSeconds(Math.Max(0, GridLostDelaySeconds));
 
@@ -34,6 +39,7 @@ public sealed class UpsStateTracker(int failuresBeforeUnreachable = UpsStateTrac
     private bool _batteryLowFired;
     private int _lowRuntimeReadings;
     private DateTimeOffset? _gridGoneSince;
+    private DateTimeOffset? _unreachableSince;
 
     /// <summary>The grid state the events have reported: during a <see cref="EventRules.GridLostDelay"/>, still true.</summary>
     public bool? GridPresent => _gridPresent;
@@ -48,6 +54,15 @@ public sealed class UpsStateTracker(int failuresBeforeUnreachable = UpsStateTrac
     /// <summary>Set by the last reading when it ended a grid loss shorter than the delay: how long it lasted.</summary>
     public TimeSpan? IgnoredGridLoss { get; private set; }
 
+    /// <summary>
+    /// While the UPS is unreachable on battery: when "Battery low" fires (<see cref="EventRules.UnreachableOnBatteryMinutes"/>)
+    /// unless it answers first.
+    /// </summary>
+    public DateTimeOffset? BatteryLowDue =>
+        _reachable == false && _gridPresent == false && !_batteryLowFired && Rules.UnreachableOnBatteryMinutes > 0 && _unreachableSince is { } since
+            ? since + TimeSpan.FromMinutes(Rules.UnreachableOnBatteryMinutes)
+            : null;
+
     /// <summary>The limits; can change at any time.</summary>
     public EventRules Rules { get; set; } = new();
 
@@ -58,6 +73,7 @@ public sealed class UpsStateTracker(int failuresBeforeUnreachable = UpsStateTrac
 
         if (_reachable == false) events.Add(UpsEventKind.UpsReachable);
         _reachable = true;
+        _unreachableSince = null;
 
         IgnoredGridLoss = null;
         if (status.GridPresent is { } grid)
@@ -109,11 +125,21 @@ public sealed class UpsStateTracker(int failuresBeforeUnreachable = UpsStateTrac
                || _lowRuntimeReadings >= EventRules.LowRuntimeReadings;
     }
 
-    public IReadOnlyList<UpsEventKind> OnFailure()
+    /// <param name="at">When the read failed: now, unless a test says otherwise.</param>
+    public IReadOnlyList<UpsEventKind> OnFailure(DateTimeOffset? at = null)
     {
+        var now = at ?? DateTimeOffset.Now;
         _consecutiveFailures++;
-        if (_consecutiveFailures < failuresBeforeUnreachable || _reachable == false) return [];
+        if (_reachable == false)
+        {
+            if (BatteryLowDue is not { } due || now < due) return [];
+            _batteryLowFired = true; // nothing tells whether the battery is low any more: assume the worst
+            return [UpsEventKind.BatteryLow];
+        }
+
+        if (_consecutiveFailures < failuresBeforeUnreachable) return [];
         _reachable = false;
+        _unreachableSince = now;
         return [UpsEventKind.UpsUnreachable];
     }
 

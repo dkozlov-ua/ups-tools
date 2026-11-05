@@ -194,7 +194,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
         Assert.True(_vm.CloseToTray);
         Assert.False(_vm.StartWithWindows);
         Assert.Equal("10", _vm.UpdatePeriod.Text);
-        Assert.Equal(("20", "10", "0"), (_vm.BatteryLowPercent.Text, _vm.BatteryLowMinutes.Text, _vm.GridLostDelay.Text));
+        Assert.Equal(("20", "10", "0", "0"), (_vm.BatteryLowPercent.Text, _vm.BatteryLowMinutes.Text, _vm.GridLostDelay.Text, _vm.UnreachableOnBattery.Text));
         Assert.Matches(@"^Version \d+\.\d+\.\d+$", _vm.Version);
         Assert.Equal(["Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again"], _vm.Notifications.Select(n => n.Title));
         Assert.Equal(0, _saves);
@@ -292,6 +292,16 @@ public sealed class ConfigurationViewModelTests : IDisposable
         Assert.Equal((1, 1), (_saves, _monitorChanges));
         _vm.GridLostDelay.Normalize();
         Assert.Equal(seconds.ToString(), _vm.GridLostDelay.Text);
+    }
+
+    [Theory]
+    [InlineData("5", 5)]
+    [InlineData("1000", 600)]
+    public void The_unreachable_on_battery_limit_applies_clamped(string text, int minutes)
+    {
+        _vm.UnreachableOnBattery.Text = text;
+        Assert.Equal(minutes, _settings.UnreachableOnBatteryMinutes);
+        Assert.Equal((1, 1), (_saves, _monitorChanges));
     }
 
     [Theory]

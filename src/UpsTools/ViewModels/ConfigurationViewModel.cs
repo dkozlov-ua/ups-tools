@@ -30,6 +30,8 @@ public sealed class ConfigurationViewModel : ObservableObject
         BatteryLowPercent = Monitor(0, AppSettings.MaxBatteryLowPercent, () => settings.BatteryLowPercent, v => settings.BatteryLowPercent = v);
         BatteryLowMinutes = Monitor(0, AppSettings.MaxBatteryLowMinutes, () => settings.BatteryLowMinutes, v => settings.BatteryLowMinutes = v);
         GridLostDelay = Monitor(0, AppSettings.MaxGridLostDelaySeconds, () => settings.GridLostDelaySeconds, v => settings.GridLostDelaySeconds = v);
+        UnreachableOnBattery = Monitor(0, AppSettings.MaxUnreachableOnBatteryMinutes,
+            () => settings.UnreachableOnBatteryMinutes, v => settings.UnreachableOnBatteryMinutes = v);
         StartWithWindows = StartupRegistration.IsEnabled;
         Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new NotificationOption(kind, settings, changed))];
         RefreshPairing();
@@ -86,6 +88,9 @@ public sealed class ConfigurationViewModel : ObservableObject
 
     /// <summary>Seconds the grid must be gone before "Grid lost"; 0: at once.</summary>
     public NumberSetting GridLostDelay { get; }
+
+    /// <summary>Minutes unreachable on battery before "Battery low"; 0: never.</summary>
+    public NumberSetting UnreachableOnBattery { get; }
 
     public void RefreshPairing()
     {

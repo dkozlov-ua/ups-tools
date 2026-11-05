@@ -355,11 +355,41 @@ public sealed class AppControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Battery_low_from_an_unreachable_ups_runs_its_scripts_and_says_why()
+    {
+        var controller = await Start(s => s.ScriptsFor(UpsEventKind.BatteryLow).Add(Script("hibernate.ps1")));
+        await Online();
+        await GridLost(60);
+        _ups.Fail();
+        _ups.Fail();
+        _ups.Fail();
+        await UiUntil(() => controller.Dashboard.Link == LinkStatus.Unreachable);
+
+        await UiThread.Run(() => controller.OnUpsEvent(UpsEventKind.BatteryLow, null)); // as the monitor raises it
+
+        var notice = _notes.Notices.Last();
+        Assert.Equal("Battery low — UPS unreachable", notice.Title);
+        Assert.EndsWith(": Battery 60 % · about 5 h 07 m left at 120 W.", notice.Body);
+        Assert.Equal("Started hibernate.ps1", notice.Footnote);
+        var variables = _scripts.Variables["hibernate.ps1"];
+        Assert.Equal(("BatteryLow", "0", "60"), (variables["UPS_EVENT"], variables["UPS_REACHABLE"], variables["UPS_BATTERY_PERCENT"]));
+    }
+
+    [Fact]
+    public async Task The_unreachable_on_battery_limit_reaches_the_monitor_and_is_saved()
+    {
+        var controller = await Start();
+        await UiThread.Run(() => controller.Configuration.UnreachableOnBattery.Text = "7");
+        Assert.Equal(7, controller.Monitor!.Rules.UnreachableOnBatteryMinutes);
+        Assert.Contains("\"UnreachableOnBatteryMinutes\": 7", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
+    }
+
+    [Fact]
     public async Task A_new_grid_lost_delay_reaches_the_monitor_and_is_saved()
     {
         var controller = await Start();
         await UiThread.Run(() => controller.Configuration.GridLostDelay.Text = "45");
-        Assert.Equal(new EventRules(20, 10, 45), controller.Monitor!.Rules);
+        Assert.Equal(new EventRules(20, 10, 45, 0), controller.Monitor!.Rules);
         Assert.Contains("\"GridLostDelaySeconds\": 45", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
     }
 

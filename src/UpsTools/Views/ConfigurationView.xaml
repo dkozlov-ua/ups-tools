@@ -81,6 +81,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <StackPanel VerticalAlignment="Center">
@@ -118,6 +119,18 @@
                             <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low at this time left in minutes"
                                      Text="{Binding BatteryLowMinutes.Text, UpdateSourceTrigger=PropertyChanged}"
                                      Tag="{Binding BatteryLowMinutes}" LostFocus="Number_LostFocus" />
+                            <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="4" VerticalAlignment="Center" Margin="0,12,0,0">
+                            <TextBlock Text="Unreachable on battery" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <TextBlock Style="{StaticResource Detail}"
+                                       Text="When the UPS stops answering while on battery, its charge can't be known: count it as low after this many minutes (0–600; 0: never)." />
+                        </StackPanel>
+                        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,12,0,0">
+                            <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low after this many minutes unreachable on battery"
+                                     Text="{Binding UnreachableOnBattery.Text, UpdateSourceTrigger=PropertyChanged}"
+                                     Tag="{Binding UnreachableOnBattery}" LostFocus="Number_LostFocus" />
                             <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
                         </StackPanel>
                     </Grid>

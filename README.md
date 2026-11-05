@@ -36,7 +36,7 @@ the NAS when the grid comes back.
 | Event | Fires when |
 |---|---|
 | Grid lost | Mains voltage at the UPS input disappears (UPS switches to battery), and stays gone for the wait set in Configuration (none by default) |
-| Battery low | On battery, the charge falls to 20 % or the time left to 10 minutes (both can be changed or turned off); once per outage |
+| Battery low | On battery, the charge falls to 20 % or the time left to 10 minutes (both can be changed or turned off), or, if set, the UPS has been unreachable on battery for a while; once per outage |
 | Grid restored | Mains voltage comes back |
 | UPS unreachable | 3 polls in a row fail |
 | UPS reachable again | The UPS answers again after being unreachable |
@@ -49,6 +49,12 @@ readings in a row: a short spike in load doesn't count.
 With a wait before *Grid lost* (Configuration → Events), a blip shorter than the wait fires nothing: no scripts, no
 notification, only a line in the log. Once the wait is over, *Grid lost* fires, and the outage (in *Grid restored* and
 `UPS_OUTAGE_SECONDS`) counts from the first reading without the grid. *Battery low* waits for *Grid lost*.
+
+If the UPS stops answering while on battery (e.g. its Bluetooth link drops), nothing tells how much charge is left.
+With *Unreachable on battery* set (Configuration → Events, off by default), *Battery low* fires once it has been
+unreachable that many minutes; its notification says so and shows the last reading, and its scripts get
+`UPS_REACHABLE=0`. If the UPS answers again first, nothing fires; if it answers with the grid back, *Grid restored*
+stops the *Battery low* scripts as usual.
 
 ## Supported devices
 

@@ -32,12 +32,16 @@ public sealed class UpsMonitor : IAsyncDisposable
     private string? _lastError; // repeated identical failures are logged once
 
     /// <param name="readTimeout">A read that takes longer counts as failed (30 s unless a test says otherwise).</param>
-    public UpsMonitor(IUpsConnection connection, TimeSpan period, TimeSpan? readTimeout = null)
+    /// <param name="clock">The time of failed reads: the real one unless a test says otherwise.</param>
+    public UpsMonitor(IUpsConnection connection, TimeSpan period, TimeSpan? readTimeout = null, Func<DateTimeOffset>? clock = null)
     {
         _connection = connection;
         _period = period;
         _readTimeout = readTimeout ?? DefaultReadTimeout;
+        _clock = clock ?? (() => DateTimeOffset.Now);
     }
+
+    private readonly Func<DateTimeOffset> _clock;
 
     public event Action<UpsStatus>? StatusUpdated;
     public event Action<UpsEvent>? EventRaised;
@@ -91,6 +95,13 @@ public sealed class UpsMonitor : IAsyncDisposable
                 if (left < wait) wait = left > TimeSpan.Zero ? left : TimeSpan.Zero;
             }
 
+            // Unreachable on battery: try again when "Battery low" would be due.
+            if (_tracker.BatteryLowDue is { } lowDue)
+            {
+                var left = lowDue - _clock() + DueMargin;
+                if (left < wait) wait = left > TimeSpan.Zero ? left : TimeSpan.Zero;
+            }
+
             if (!_wake.TryReset()) _wake = new CancellationTokenSource();
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, _wake.Token);
             try
@@ -129,7 +140,10 @@ public sealed class UpsMonitor : IAsyncDisposable
             var message = ex is OperationCanceledException ? "timed out" : ex.Message;
             if (message != _lastError) Log?.Invoke($"UPS read failed: {message}");
             _lastError = message;
-            events = _tracker.OnFailure();
+            var unreachable = _tracker.Reachable == false;
+            events = _tracker.OnFailure(_clock());
+            if (!unreachable && _tracker.BatteryLowDue is not null)
+                Log?.Invoke($"The UPS is unreachable on battery; Battery low fires if it stays unreachable for {_tracker.Rules.UnreachableOnBatteryMinutes} min");
             SetLinkState(_tracker.Reachable == false ? UpsLinkState.Unreachable
                 : LinkState == UpsLinkState.Connecting ? UpsLinkState.Connecting
                 : UpsLinkState.Retrying);
