@@ -26,6 +26,7 @@ public sealed class ElevatedTasks(AppLog log)
     public const string RunScriptArgument = "--run-script";
 
     private const int TaskRunLevelHighest = 1;
+    private const int TaskEnumHidden = 1;
     private const int ErrorCancelled = 1223; // the user said No to the UAC prompt
     private const int SchedTaskRunning = 0x41301;
     private const int SchedTaskHasNotRun = 0x41303;
@@ -142,6 +143,90 @@ public sealed class ElevatedTasks(AppLog log)
             log.Warn($"Couldn't delete the administrator task of {name}: {ex.Message}");
             return ex.Message;
         }
+    }
+
+    /// <summary>
+    /// Deletes the tasks that start this exe, for the uninstaller; asks for administrator rights once, if there
+    /// are any. Tasks of another copy of UPS Tools (e.g. a development build) stay.
+    /// </summary>
+    /// <returns>Null on success, otherwise what went wrong.</returns>
+    public async Task<string?> RemoveOwnTasksAsync()
+    {
+        try
+        {
+            var names = OwnTasks();
+            if (names.Count == 0) return null;
+            var code = await RunElevatedAsync(Executable, Uninstaller.DeleteTasksArgument);
+            var problem = code switch
+            {
+                null => "the administrator prompt was cancelled",
+                0 => OwnTasks().Count == 0 ? null : "some are still there",
+                _ => $"deleting them failed (exit code {code})",
+            };
+            if (problem is null) log.Info($"Deleted the administrator tasks ({string.Join(", ", names)})");
+            else log.Warn($"Couldn't delete the administrator tasks: {problem}");
+            return problem;
+        }
+        catch (Exception ex)
+        {
+            log.Warn($"Couldn't delete the administrator tasks: {ex.Message}");
+            return ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// <c>UpsTools.exe --delete-admin-tasks</c>, run elevated by <see cref="RemoveOwnTasksAsync"/>: deletes the
+    /// tasks that start this exe, and the \UpsTools folder once it is empty.
+    /// </summary>
+    /// <returns>The process exit code.</returns>
+    public static int DeleteOwnTasks()
+    {
+        try
+        {
+            var service = Connect();
+            var folder = service.GetFolder(FolderPath);
+            foreach (var name in OwnTasks()) folder.DeleteTask(name, 0);
+            if ((int)folder.GetTasks(TaskEnumHidden).Count == 0 && (int)folder.GetFolders(0).Count == 0)
+                service.GetFolder(@"\").DeleteFolder(FolderPath.TrimStart('\\'), 0);
+            return 0;
+        }
+        catch (Exception ex) when (ex.HResult is unchecked((int)0x80070002) or unchecked((int)0x80070003))
+        {
+            return 0; // no folder: nothing to delete
+        }
+        catch
+        {
+            return 1;
+        }
+    }
+
+    /// <summary>Names of the tasks in \UpsTools that start this exe.</summary>
+    private static List<string> OwnTasks()
+    {
+        var names = new List<string>();
+        dynamic tasks;
+        try
+        {
+            tasks = Connect().GetFolder(FolderPath).GetTasks(TaskEnumHidden);
+        }
+        catch (Exception ex) when (ex.HResult is unchecked((int)0x80070002) or unchecked((int)0x80070003))
+        {
+            return names;
+        }
+        int count = tasks.Count;
+        for (var i = 1; i <= count; i++)
+        {
+            var task = tasks[i];
+            var actions = task.Definition.Actions;
+            int actionCount = actions.Count;
+            for (var a = 1; a <= actionCount; a++)
+                if (string.Equals((string)actions[a].Path, Executable, StringComparison.OrdinalIgnoreCase))
+                {
+                    names.Add((string)task.Name);
+                    break;
+                }
+        }
+        return names;
     }
 
     /// <summary>Starts the script's task. Check <see cref="Problem"/> first.</summary>

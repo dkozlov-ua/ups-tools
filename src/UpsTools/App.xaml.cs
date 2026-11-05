@@ -29,14 +29,22 @@ public partial class App : Application
         if (ElevatedTasks.IsRunScript(e.Args))
             Environment.Exit(ScriptRunner.RunFromTask(ElevatedTasks.RawCommandLine));
 
-        var exitRequested = e.Args.Contains(ExitArgument, StringComparer.OrdinalIgnoreCase);
+        // Used by the installer before replacing the exe: exit code 0 once no copy is running.
+        if (e.Args.Contains(ExitArgument, StringComparer.OrdinalIgnoreCase))
+            Environment.Exit(StopRunningCopy() ? 0 : 1);
+
+        // Used by the uninstaller: removes what the app registered outside its folder.
+        if (e.Args.Contains(Uninstaller.Argument, StringComparer.OrdinalIgnoreCase))
+            Environment.Exit(Task.Run(Uninstaller.RunAsync).GetAwaiter().GetResult());
+        if (e.Args.Contains(Uninstaller.DeleteTasksArgument, StringComparer.OrdinalIgnoreCase))
+            Environment.Exit(ElevatedTasks.DeleteOwnTasks());
+
         _instanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out var isFirstInstance);
-        if (!isFirstInstance || exitRequested)
+        if (!isFirstInstance)
         {
-            // Already running: bring its window forward, or ask it to exit (used before upgrading the exe).
-            try { EventWaitHandle.OpenExisting(exitRequested ? ExitEventName : ShowWindowEventName).Set(); }
-            catch { /* not running, or already exiting */ }
-            if (isFirstInstance) _instanceMutex.ReleaseMutex();
+            // Already running: bring its window forward.
+            try { EventWaitHandle.OpenExisting(ShowWindowEventName).Set(); }
+            catch { /* already exiting */ }
             _instanceMutex.Dispose();
             _instanceMutex = null;
             Shutdown();
@@ -66,6 +74,27 @@ public partial class App : Application
 
         if (!e.Args.Contains(StartupRegistration.BackgroundArgument, StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
+    }
+
+    /// <summary>
+    /// Asks a running copy to exit (it disconnects from the UPS first) and waits until it has, up to 30 s.
+    /// </summary>
+    /// <returns>Whether no copy is running any more.</returns>
+    internal static bool StopRunningCopy()
+    {
+        using var mutex = new Mutex(initiallyOwned: false, InstanceMutexName);
+        try { EventWaitHandle.OpenExisting(ExitEventName).Set(); }
+        catch { /* not running, or already exiting */ }
+        try
+        {
+            if (!mutex.WaitOne(TimeSpan.FromSeconds(30))) return false;
+        }
+        catch (AbandonedMutexException)
+        {
+            // It ended without releasing it: gone all the same, and the mutex is now ours.
+        }
+        mutex.ReleaseMutex();
+        return true;
     }
 
     private void ListenForSignals()

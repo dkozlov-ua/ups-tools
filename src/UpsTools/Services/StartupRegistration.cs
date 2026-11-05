@@ -28,6 +28,17 @@ public static class StartupRegistration
         else key.DeleteValue(ValueName, throwOnMissingValue: false);
     }
 
+    /// <summary>Deletes the entry when it starts this exe (not another copy's).</summary>
+    /// <returns>Whether there was one to delete.</returns>
+    public static bool RemoveIfThisExe()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+        if (key?.GetValue(ValueName) is not string current ||
+            !current.Contains($"\"{Environment.ProcessPath}\"", StringComparison.OrdinalIgnoreCase)) return false;
+        key.DeleteValue(ValueName, throwOnMissingValue: false);
+        return true;
+    }
+
     /// <summary>Point an existing entry at the current exe, e.g. after the user replaced it with a new release elsewhere.</summary>
     public static void RefreshPathIfEnabled()
     {

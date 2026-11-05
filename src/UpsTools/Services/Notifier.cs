@@ -100,6 +100,29 @@ public sealed class Notifier
         return ToastNotificationManager.CreateToastNotifier(AppUserModelId);
     }
 
+    /// <summary>Removes the registration, the images, and the notifications still in Notification Center.</summary>
+    public static void Unregister(AppLog log)
+    {
+        try { ToastNotificationManager.History.Clear(AppUserModelId); }
+        catch { /* never registered, or nothing shown */ }
+
+        bool registered;
+        using (var key = Registry.CurrentUser.OpenSubKey(RegistrationKey)) registered = key is not null;
+        if (registered)
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(RegistrationKey, throwOnMissingSubKey: false);
+            log.Info("Removed the notification registration");
+        }
+
+        if (!Directory.Exists(CacheFolder)) return;
+        foreach (var file in Directory.EnumerateFiles(CacheFolder, "*.png"))
+        {
+            var name = Path.GetFileName(file);
+            if (name == "app.png" || name.StartsWith("logo-", StringComparison.Ordinal)) File.Delete(file);
+        }
+        if (!Directory.EnumerateFileSystemEntries(CacheFolder).Any()) Directory.Delete(CacheFolder);
+    }
+
     private string? Logo(TrayState state)
     {
         if (_logos.TryGetValue(state, out var uri)) return uri;
