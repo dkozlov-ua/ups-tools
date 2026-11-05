@@ -121,8 +121,9 @@ public class ScriptReportTests
     public void Stopped_scripts_lead_the_footnote()
     {
         Assert.Equal("Stopped the Grid lost scripts before hibernate.ps1",
-            ScriptReport.Footnote(null, (UpsEventKind.GridLost, ["hibernate.ps1"])));
-        Assert.Null(ScriptReport.Footnote(null, (UpsEventKind.GridLost, [])));
+            ScriptReport.Footnote(null, [(UpsEventKind.GridLost, ["hibernate.ps1"])]));
+        Assert.Null(ScriptReport.Footnote(null, [(UpsEventKind.GridLost, [])]));
+        Assert.Null(ScriptReport.Footnote(null, []));
     }
 
     [Fact]
@@ -133,7 +134,7 @@ public class ScriptReportTests
         var run = chain.RunAsync((_, _, _) => exit.Task, CancellationToken.None);
 
         Assert.Equal("Stopped the UPS unreachable scripts before a and b; waiting for save.ps1, then wake.ahk",
-            ScriptReport.Footnote(chain, (UpsEventKind.UpsUnreachable, ["a", "b"])));
+            ScriptReport.Footnote(chain, [(UpsEventKind.UpsUnreachable, ["a", "b"])]));
         exit.SetResult(StepResult.Success);
         await run;
     }

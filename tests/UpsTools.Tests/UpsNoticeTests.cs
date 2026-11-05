@@ -97,8 +97,26 @@ public class UpsNoticeTests
         var chain = new ScriptChain([new ScriptStep("wake_nas.ahk", false)]);
         _ = chain.RunAsync((_, _, _) => Task.FromResult(StepResult.Success), CancellationToken.None);
         var notice = UpsNotice.For(UpsEventKind.GridRestored, null, null, chain,
-            (UpsEventKind.GridLost, ["hibernate.ps1"]));
+            [(UpsEventKind.GridLost, ["hibernate.ps1"])]);
         Assert.Equal("Stopped the Grid lost scripts before hibernate.ps1; started wake_nas.ahk", notice.Footnote);
+    }
+
+    [Fact]
+    public void Grid_restored_names_each_event_whose_scripts_it_stopped()
+    {
+        var notice = UpsNotice.For(UpsEventKind.GridRestored, null, null, null,
+            [(UpsEventKind.GridLost, ["a.ps1"]), (UpsEventKind.BatteryLow, []), (UpsEventKind.BatteryLow, ["hibernate.ps1", "b"])]);
+        Assert.Equal("Stopped the Grid lost scripts before a.ps1; stopped the Battery low scripts before hibernate.ps1 and b", notice.Footnote);
+    }
+
+    [Fact]
+    public void Battery_low_is_an_important_problem_with_the_charge_and_time_left()
+    {
+        var notice = UpsNotice.For(UpsEventKind.BatteryLow, OnBattery with { BatteryPercent = 18, ReportedRuntime = TimeSpan.FromMinutes(12) });
+        Assert.Equal((NoticeTone.Problem, "Battery low", "Battery 18 % · about 12 m left at 120 W", true),
+            (notice.Tone, notice.Title, notice.Body, notice.Important));
+        Assert.Equal(UpsNotice.For(UpsEventKind.GridLost, null).Tag, notice.Tag); // replaces Grid lost; Grid restored replaces it
+        Assert.Equal("The UPS battery is running low.", UpsNotice.For(UpsEventKind.BatteryLow, null).Body);
     }
 
     [Fact]

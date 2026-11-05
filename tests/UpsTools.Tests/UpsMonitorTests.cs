@@ -100,6 +100,21 @@ public class UpsMonitorTests
     }
 
     [Fact]
+    public async Task Battery_low_follows_the_rules_it_is_given()
+    {
+        await using var monitor = Start();
+        Assert.Equal(new EventRules(), monitor.Rules);
+        monitor.Rules = new EventRules(BatteryLowPercent: 50, BatteryLowMinutes: 0);
+        _ups.Answer(true, 60);
+        _ups.Answer(false, 55);
+        _ups.Answer(false, 50);
+        await Wait.Until(() => _statuses.Count == 3);
+
+        Assert.Equal([UpsEventKind.GridLost, UpsEventKind.BatteryLow], _events.Select(e => e.Kind));
+        Assert.Equal(50, _events.Last().Status!.BatteryPercent);
+    }
+
+    [Fact]
     public async Task Failures_before_the_first_reading_keep_connecting_then_unreachable()
     {
         await using var monitor = Start();

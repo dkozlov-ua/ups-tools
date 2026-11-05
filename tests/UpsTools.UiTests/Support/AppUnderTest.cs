@@ -88,7 +88,10 @@ internal sealed class AppUnderTest : IDisposable
             ["CloseToTray"] = true,
             ["UpdatePeriodSeconds"] = 2,
             ["Scripts"] = new JsonObject(),
-            ["Notifications"] = new JsonObject { ["GridLost"] = false, ["GridRestored"] = false, ["UpsUnreachable"] = false, ["UpsReachable"] = false },
+            ["Notifications"] = new JsonObject
+            {
+                ["GridLost"] = false, ["BatteryLow"] = false, ["GridRestored"] = false, ["UpsUnreachable"] = false, ["UpsReachable"] = false,
+            },
         };
         edit?.Invoke(settings);
         Directory.CreateDirectory(SettingsFolder);

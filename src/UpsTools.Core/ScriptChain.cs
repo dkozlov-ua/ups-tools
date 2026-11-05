@@ -127,12 +127,13 @@ public static class ScriptReport
     /// One line for an event's notification, describing the chain as it stands, e.g.
     /// "Started a.ps1; waiting for b.ps1, then c.ps1", or null when the event has no scripts.
     /// </summary>
-    /// <param name="stopped">Another event's scripts that this event stopped, and the ones of them it skipped.</param>
-    public static string? Footnote(ScriptChain? chain, (UpsEventKind Kind, IReadOnlyList<string> Skipped)? stopped = null)
+    /// <param name="stopped">Other events' scripts that this event stopped, and the ones of them it skipped.</param>
+    public static string? Footnote(ScriptChain? chain, IReadOnlyList<(UpsEventKind Kind, IReadOnlyList<string> Skipped)>? stopped = null)
     {
         var parts = new List<string>();
-        if (stopped is { Skipped.Count: > 0 } s)
-            parts.Add($"Stopped the {s.Kind.Title()} scripts before {List(s.Skipped)}");
+        foreach (var s in stopped ?? [])
+            if (s.Skipped.Count > 0)
+                parts.Add((parts.Count == 0 ? "Stopped" : "stopped") + $" the {s.Kind.Title()} scripts before {List(s.Skipped)}");
 
         if (chain is not null)
         {

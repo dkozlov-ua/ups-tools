@@ -8,16 +8,27 @@ public sealed class ConfigurationViewModel : ObservableObject
 {
     private readonly AppSettings _settings;
     private readonly Action _changed;
-    private readonly Action<TimeSpan> _periodChanged;
     private readonly AppLog _log;
 
-    public ConfigurationViewModel(AppSettings settings, AppLog log, Action changed, Action<TimeSpan> periodChanged)
+    /// <param name="changed">Saves the settings.</param>
+    /// <param name="monitorChanged">Applies a changed setting of the monitor: its period or the events' limits.</param>
+    public ConfigurationViewModel(AppSettings settings, AppLog log, Action changed, Action monitorChanged)
     {
         _settings = settings;
         _log = log;
         _changed = changed;
-        _periodChanged = periodChanged;
-        UpdatePeriodText = settings.UpdatePeriodSeconds.ToString();
+
+        NumberSetting Monitor(int min, int max, Func<int> get, Action<int> set) => new(min, max, get, value =>
+        {
+            set(value);
+            changed();
+            monitorChanged();
+        });
+
+        UpdatePeriod = Monitor(AppSettings.MinUpdatePeriodSeconds, AppSettings.MaxUpdatePeriodSeconds,
+            () => settings.UpdatePeriodSeconds, v => settings.UpdatePeriodSeconds = v);
+        BatteryLowPercent = Monitor(0, AppSettings.MaxBatteryLowPercent, () => settings.BatteryLowPercent, v => settings.BatteryLowPercent = v);
+        BatteryLowMinutes = Monitor(0, AppSettings.MaxBatteryLowMinutes, () => settings.BatteryLowMinutes, v => settings.BatteryLowMinutes = v);
         StartWithWindows = StartupRegistration.IsEnabled;
         Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new NotificationOption(kind, settings, changed))];
         RefreshPairing();
@@ -63,25 +74,14 @@ public sealed class ConfigurationViewModel : ObservableObject
         }
     }
 
-    /// <summary>Text box contents; applied (and clamped) when it parses.</summary>
-    public string UpdatePeriodText
-    {
-        get;
-        set
-        {
-            field = value;
-            OnPropertyChanged();
-            if (!int.TryParse(value, out var seconds)) return;
-            seconds = Math.Clamp(seconds, AppSettings.MinUpdatePeriodSeconds, AppSettings.MaxUpdatePeriodSeconds);
-            if (seconds == _settings.UpdatePeriodSeconds) return;
-            _settings.UpdatePeriodSeconds = seconds;
-            _changed();
-            _periodChanged(TimeSpan.FromSeconds(seconds));
-        }
-    } = "";
+    /// <summary>How often the UPS is polled, in seconds.</summary>
+    public NumberSetting UpdatePeriod { get; }
 
-    /// <summary>Show the value actually in effect, e.g. after the user typed something out of range.</summary>
-    public void NormalizeUpdatePeriod() => UpdatePeriodText = _settings.UpdatePeriodSeconds.ToString();
+    /// <summary>"Battery low" at or below this charge; 0: off.</summary>
+    public NumberSetting BatteryLowPercent { get; }
+
+    /// <summary>"Battery low" at or below this many minutes left; 0: off.</summary>
+    public NumberSetting BatteryLowMinutes { get; }
 
     public void RefreshPairing()
     {
@@ -92,6 +92,45 @@ public sealed class ConfigurationViewModel : ObservableObject
             ? "Find your UPS to start monitoring it."
             : $"{ups.Name} · {ups.Address} · via Bluetooth LE";
     }
+}
+
+/// <summary>
+/// A whole number typed into a text box: applied, clamped to its range, as soon as it parses; the box shows the
+/// value in effect once it loses focus (<see cref="Normalize"/>).
+/// </summary>
+public sealed class NumberSetting : ObservableObject
+{
+    private readonly Func<int> _get;
+    private readonly Action<int> _set;
+
+    public NumberSetting(int min, int max, Func<int> get, Action<int> set)
+    {
+        Min = min;
+        Max = max;
+        _get = get;
+        _set = set;
+        Text = get().ToString();
+    }
+
+    public int Min { get; }
+    public int Max { get; }
+    public int Value => _get();
+
+    public string Text
+    {
+        get;
+        set
+        {
+            field = value;
+            OnPropertyChanged();
+            if (!int.TryParse(value, out var number)) return;
+            number = Math.Clamp(number, Min, Max);
+            if (number != _get()) _set(number);
+        }
+    } = "";
+
+    /// <summary>Show the value actually in effect, e.g. after the user typed something out of range.</summary>
+    public void Normalize() => Text = _get().ToString();
 }
 
 /// <summary>Whether one event shows a Windows notification.</summary>

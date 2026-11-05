@@ -58,6 +58,27 @@ public sealed class ConfigurationUiTests : IDisposable
     }
 
     [Fact]
+    public void Battery_low_limits_are_saved()
+    {
+        _app.Seed();
+        _app.Start();
+        var window = _app.Tab("Configuration");
+
+        var percent = window.ByName("Battery low at this charge in percent");
+        var minutes = window.ByName("Battery low at this time left in minutes");
+        Assert.Equal(("20", "10"), (percent.Value(), minutes.Value()));
+
+        percent.SetFocus();
+        percent.SetValue("150");
+        Ui.Until(() => (int)_app.Settings()["BatteryLowPercent"]! == 99, "the charge limit to be saved, at most 99 %");
+        minutes.SetFocus();
+        Ui.Until(() => percent.Value() == "99", "the box to show what applies");
+
+        minutes.SetValue("0");
+        Ui.Until(() => (int)_app.Settings()["BatteryLowMinutes"]! == 0, "the time limit to be turned off");
+    }
+
+    [Fact]
     public void Start_with_windows_adds_and_removes_the_run_entry()
     {
         _app.Seed();

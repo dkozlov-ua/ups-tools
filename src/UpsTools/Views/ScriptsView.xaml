@@ -8,7 +8,7 @@
             <StackPanel Margin="6,0,6,6">
                 <TextBlock Text="Scripts" Style="{StaticResource PageTitle}" />
                 <TextBlock Style="{StaticResource Detail}" FontSize="13" Margin="0,2,0,0"
-                           Text="Run scripts when the UPS state changes, in the listed order (drag a script by its handle to reorder). A script set to wait must finish successfully before the next one starts; if it fails, the rest are skipped. When the grid comes back or the UPS answers again, the other event's scripts that haven't started yet are skipped. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
+                           Text="Run scripts when the UPS state changes, in the listed order (drag a script by its handle to reorder). A script set to wait must finish successfully before the next one starts; if it fails, the rest are skipped. When the grid comes back, the Grid lost and Battery low scripts that haven't started yet are skipped; when the UPS answers again, the UPS unreachable ones. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
             </StackPanel>
 
             <ItemsControl ItemsSource="{Binding EventScripts}">

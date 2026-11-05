@@ -76,6 +76,29 @@ public sealed class DashboardUiTests : IDisposable
     }
 
     [Fact]
+    public void A_low_battery_runs_the_battery_low_scripts_once_per_outage()
+    {
+        var low = _app.Script("low.ps1");
+        _app.Seed(s => s["Scripts"]!["BatteryLow"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["Path"] = low }));
+        var window = _app.Start()!;
+        window.HasText("GridValue", "Online");
+
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 50, AcInputW = 0, AcOutputW = 120 });
+        window.HasText("GridValue", "Lost");
+        Assert.Equal(0, _app.Runs("low.ps1"));
+
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 20, AcInputW = 0, AcOutputW = 120 });
+        Ui.Until(() => _app.Runs("low.ps1") == 1, "the Battery low script");
+        Assert.Contains(window.AllById("ActivityMessage"), m => m.Text() == "Battery low");
+
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 19, AcInputW = 0, AcOutputW = 120 });
+        window.HasText("BatteryValue", "19 %");
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 18, AcInputW = 0, AcOutputW = 120 });
+        window.HasText("BatteryValue", "18 %");
+        Assert.Equal(1, _app.Runs("low.ps1"));
+    }
+
+    [Fact]
     public void A_ups_that_stops_answering_becomes_unreachable_then_reachable_again()
     {
         _app.Seed();

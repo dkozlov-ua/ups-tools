@@ -39,12 +39,12 @@ public sealed class ScriptsUiTests : IDisposable
     public void Each_event_has_its_card_and_an_empty_one_says_so()
     {
         var window = StartWith();
-        foreach (var title in new[] { "Grid lost", "Grid restored", "UPS unreachable", "UPS reachable again" })
+        foreach (var title in new[] { "Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again" })
         {
             window.ByName($"Add a script to {title}");
             window.ByName($"Run the {title} scripts now");
         }
-        Assert.Equal(4, window.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "No scripts — nothing happens on this event.")).Count);
+        Assert.Equal(5, window.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "No scripts — nothing happens on this event.")).Count);
     }
 
     [Fact]

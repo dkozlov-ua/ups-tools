@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using UpsTools.Services;
+using UpsTools.ViewModels;
 
 namespace UpsTools.Views;
 
@@ -36,7 +37,8 @@ public partial class ConfigurationView : UserControl
         if (result == MessageBoxResult.Yes) await Controller.ForgetAsync();
     }
 
-    private void UpdatePeriod_LostFocus(object sender, RoutedEventArgs e) => Controller.Configuration.NormalizeUpdatePeriod();
+    /// <summary>A number box shows the value in effect once it loses focus (its Tag is its <see cref="NumberSetting"/>).</summary>
+    private void Number_LostFocus(object sender, RoutedEventArgs e) => ((NumberSetting)((FrameworkElement)sender).Tag).Normalize();
 
     private void OpenSettingsFolder_Click(object sender, RoutedEventArgs e)
     {

@@ -3,7 +3,8 @@
 <img src="tools/app-icon-preview.png" alt="App icon" height="64">
 
 A small Windows tray app that watches a UPS / portable power station and runs your scripts when its state changes,
-e.g. pause games and put the NAS to sleep when the grid goes down, and wake the NAS when it comes back.
+e.g. pause games and put the NAS to sleep when the grid goes down, hibernate the PC when the battery runs low, and wake
+the NAS when the grid comes back.
 
 - **Dashboard**: grid status, battery level, charge/discharge rate, estimated time on battery, input and output power, recent activity.
 - **Scripts**: attach any number of scripts to each event. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
@@ -13,22 +14,28 @@ e.g. pause games and put the NAS to sleep when the grid goes down, and wake the 
     code, or it can't be started), the scripts after it are skipped, and a notification says so.
   - **Run as administrator**: the script runs elevated without a UAC prompt when the event fires, so it works with
     nobody at the PC (see [Scripts that run as administrator](#scripts-that-run-as-administrator)).
-  - When the grid comes back or the UPS answers again, the opposite event's scripts that haven't started yet are skipped:
-    e.g. *Grid lost* → `wait 5 minutes` (waited for) → `hibernate` doesn't hibernate the PC after a 2-minute outage.
+  - When the grid comes back, the *Grid lost* and *Battery low* scripts that haven't started yet are skipped, e.g.
+    *Grid lost* → `wait 5 minutes` (waited for) → `hibernate` doesn't hibernate the PC after a 2-minute outage. When the
+    UPS answers again, the same goes for the *UPS unreachable* scripts.
 - **Notifications**: a Windows notification for each event, e.g. *Grid lost — running on battery: Battery 87 % ·
   about 6 h 10 m left at 120 W*, naming the scripts it started. *Grid restored* says how long the outage lasted and
-  replaces the *Grid lost* notification; *UPS reachable again* replaces *UPS unreachable*. Clicking one opens the app.
-- **Configuration**: pair the UPS, close to tray, start with Windows, UPS update period, which events notify.
+  replaces the *Grid lost* or *Battery low* notification; *UPS reachable again* replaces *UPS unreachable*. Clicking one
+  opens the app.
+- **Configuration**: pair the UPS, close to tray, start with Windows, UPS update period, the *Battery low* limits, which
+  events notify.
 
 | Event | Fires when |
 |---|---|
 | Grid lost | Mains voltage at the UPS input disappears (UPS switches to battery) |
+| Battery low | On battery, the charge falls to 20 % or the time left to 10 minutes (both can be changed or turned off); once per outage |
 | Grid restored | Mains voltage comes back |
 | UPS unreachable | 3 polls in a row fail |
 | UPS reachable again | The UPS answers again after being unreachable |
 
 Events fire on transitions only. The first reading after start-up is a baseline, so starting the app during an outage
-does not fire "Grid lost".
+does not fire "Grid lost". *Battery low* is the exception: started on battery with the battery already low, it fires on
+the first reading. The time left is the UPS's estimate at the current load, so it has to be at or below the limit in two
+readings in a row: a short spike in load doesn't count.
 
 ## Supported devices
 

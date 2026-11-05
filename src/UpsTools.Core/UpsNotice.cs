@@ -15,20 +15,21 @@ public sealed record UpsNotice(UpsEventKind Kind, NoticeTone Tone, string Title,
 {
     /// <summary>
     /// Notifications with the same tag replace each other, so the notification list shows the current
-    /// state: "Grid restored" replaces "Grid lost", "UPS reachable again" replaces "UPS unreachable".
+    /// state: "Battery low" replaces "Grid lost", "Grid restored" replaces either, "UPS reachable again" replaces
+    /// "UPS unreachable".
     /// </summary>
-    public string Tag => Kind is UpsEventKind.GridLost or UpsEventKind.GridRestored ? "grid" : "link";
+    public string Tag => Kind is UpsEventKind.GridLost or UpsEventKind.BatteryLow or UpsEventKind.GridRestored ? "grid" : "link";
 
     /// <summary>Stays on screen longer: something stopped working.</summary>
-    public bool Important => Kind is UpsEventKind.GridLost or UpsEventKind.UpsUnreachable;
+    public bool Important => Kind is UpsEventKind.GridLost or UpsEventKind.BatteryLow or UpsEventKind.UpsUnreachable;
 
     /// <param name="kind">The event.</param>
     /// <param name="status">The reading the event was raised with; for "UPS unreachable", the last good reading.</param>
     /// <param name="outage">For "Grid restored": how long the UPS ran on battery, when known.</param>
     /// <param name="scripts">This event's scripts, as they stand when the notification goes out.</param>
-    /// <param name="stopped">The opposite event's scripts that this event stopped, and the ones of them it skipped.</param>
+    /// <param name="stopped">The other events' scripts that this event stopped, and the ones of them it skipped.</param>
     public static UpsNotice For(UpsEventKind kind, UpsStatus? status, TimeSpan? outage = null,
-        ScriptChain? scripts = null, (UpsEventKind Kind, IReadOnlyList<string> Skipped)? stopped = null)
+        ScriptChain? scripts = null, IReadOnlyList<(UpsEventKind Kind, IReadOnlyList<string> Skipped)>? stopped = null)
     {
         var footnote = ScriptReport.Footnote(scripts, stopped);
         var battery = status?.BatteryPercent is { } soc ? $"Battery {soc} %" : null;
@@ -39,6 +40,12 @@ public sealed record UpsNotice(UpsEventKind Kind, NoticeTone Tone, string Title,
             {
                 var body = Join(battery, Runtime(status)) ?? "The UPS switched to battery.";
                 return new(kind, NoticeTone.Warning, "Grid lost — running on battery", body, footnote);
+            }
+
+            case UpsEventKind.BatteryLow:
+            {
+                var body = Join(battery, Runtime(status)) ?? "The UPS battery is running low.";
+                return new(kind, NoticeTone.Problem, "Battery low", body, footnote);
             }
 
             case UpsEventKind.GridRestored:

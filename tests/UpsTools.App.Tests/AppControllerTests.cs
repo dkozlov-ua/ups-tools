@@ -89,7 +89,7 @@ public sealed class AppControllerTests : IDisposable
         Assert.Equal(0, _ups.Connections);
         Assert.Equal(LinkStatus.NotPaired, await Ui(() => controller.Dashboard.Link));
         Assert.False(await Ui(() => controller.Configuration.IsPaired));
-        Assert.Equal(4, controller.EventScripts.Count);
+        Assert.Equal(5, controller.EventScripts.Count);
     }
 
     [Fact]
@@ -210,6 +210,48 @@ public sealed class AppControllerTests : IDisposable
 
         await Task.Delay(100);
         Assert.Equal(2, _notes.All.Count); // the stopped chain doesn't report a problem
+    }
+
+    [Fact]
+    public async Task Battery_low_runs_its_scripts_and_grid_restored_stops_them_and_grid_lost()
+    {
+        await Start(s =>
+        {
+            s.ScriptsFor(UpsEventKind.GridLost).AddRange([Script("wait-30-min.ps1", wait: true), Script("sleep.ps1")]);
+            s.ScriptsFor(UpsEventKind.BatteryLow).AddRange([Script("save.ps1", wait: true), Script("hibernate.ps1")]);
+        });
+        await Online();
+        await GridLost(30);
+
+        _ups.Answer(false, 20);
+        await UiUntil(() => _notes.All.Count == 2, "Battery low");
+        Assert.Equal(new FakeNotifications.Shown("grid", TrayState.Problem, "Battery low",
+            "Battery 20 % · about 1 h 42 m left at 120 W", "Waiting for save.ps1, then hibernate.ps1", "Bluetti EL100V2", true), _notes.All[1]);
+        Assert.Contains(_log.Recent, e => e.Level == LogLevel.Event && e.Message == "Battery low");
+
+        _ups.Answer(false, 19); // once per outage
+        _ups.Answer(true, 19);
+        await UiUntil(() => _notes.All.Count == 3, "Grid restored");
+
+        Assert.Equal("Stopped the Grid lost scripts before sleep.ps1; stopped the Battery low scripts before hibernate.ps1",
+            _notes.Notices[2].Footnote);
+        Assert.Equal(["wait-30-min.ps1", "save.ps1"], _scripts.Names);
+    }
+
+    [Fact]
+    public async Task New_battery_low_limits_reach_the_monitor_and_are_saved()
+    {
+        var controller = await Start(s => s.BatteryLowMinutes = 0);
+        Assert.Equal(new EventRules(20, 0), controller.Monitor!.Rules);
+
+        await UiThread.Run(() => controller.Configuration.BatteryLowPercent.Text = "40");
+        Assert.Equal(new EventRules(40, 0), controller.Monitor.Rules);
+        Assert.Contains("\"BatteryLowPercent\": 40", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
+
+        await Online(45);
+        _ups.Answer(false, 40);
+        await UiUntil(() => _notes.All.Count == 2);
+        Assert.Equal(["Grid lost — running on battery", "Battery low"], _notes.All.Select(n => n.Title));
     }
 
     [Fact]
@@ -410,7 +452,7 @@ public sealed class AppControllerTests : IDisposable
     public async Task A_new_update_period_reaches_the_monitor()
     {
         var controller = await Start();
-        await UiThread.Run(() => controller.Configuration.UpdatePeriodText = "45");
+        await UiThread.Run(() => controller.Configuration.UpdatePeriod.Text = "45");
         Assert.Equal(TimeSpan.FromSeconds(45), controller.Monitor!.Period);
         Assert.Contains("\"UpdatePeriodSeconds\": 45", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
     }

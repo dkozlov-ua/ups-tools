@@ -171,7 +171,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
     private readonly TempFolder _folder = new();
     private readonly AppSettings _settings = new();
     private readonly AppLog _log;
-    private readonly List<TimeSpan> _periods = [];
+    private int _monitorChanges;
     private int _saves;
     private readonly ConfigurationViewModel _vm;
 
@@ -179,7 +179,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
     {
         StartupRegistration.SetEnabled(false);
         _log = new AppLog(_folder.Path);
-        _vm = new ConfigurationViewModel(_settings, _log, () => _saves++, _periods.Add);
+        _vm = new ConfigurationViewModel(_settings, _log, () => _saves++, () => _monitorChanges++);
     }
 
     public void Dispose()
@@ -193,9 +193,10 @@ public sealed class ConfigurationViewModelTests : IDisposable
     {
         Assert.True(_vm.CloseToTray);
         Assert.False(_vm.StartWithWindows);
-        Assert.Equal("10", _vm.UpdatePeriodText);
+        Assert.Equal("10", _vm.UpdatePeriod.Text);
+        Assert.Equal(("20", "10"), (_vm.BatteryLowPercent.Text, _vm.BatteryLowMinutes.Text));
         Assert.Matches(@"^Version \d+\.\d+\.\d+$", _vm.Version);
-        Assert.Equal(["Grid lost", "Grid restored", "UPS unreachable", "UPS reachable again"], _vm.Notifications.Select(n => n.Title));
+        Assert.Equal(["Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again"], _vm.Notifications.Select(n => n.Title));
         Assert.Equal(0, _saves);
     }
 
@@ -226,7 +227,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
     {
         _vm.StartWithWindows = true;
         Assert.True(StartupRegistration.IsEnabled);
-        Assert.True(new ConfigurationViewModel(_settings, _log, () => { }, _ => { }).StartWithWindows);
+        Assert.True(new ConfigurationViewModel(_settings, _log, () => { }, () => { }).StartWithWindows);
 
         _vm.StartWithWindows = false;
         Assert.False(StartupRegistration.IsEnabled);
@@ -240,15 +241,15 @@ public sealed class ConfigurationViewModelTests : IDisposable
     [InlineData("9999", 600)]
     public void The_update_period_applies_clamped_when_it_parses(string text, int seconds)
     {
-        _vm.UpdatePeriodText = text;
+        _vm.UpdatePeriod.Text = text;
 
-        Assert.Equal(text, _vm.UpdatePeriodText); // what was typed stays until the box loses focus
+        Assert.Equal(text, _vm.UpdatePeriod.Text); // what was typed stays until the box loses focus
         Assert.Equal(seconds, _settings.UpdatePeriodSeconds);
-        Assert.Equal([TimeSpan.FromSeconds(seconds)], _periods);
+        Assert.Equal(1, _monitorChanges);
         Assert.Equal(1, _saves);
 
-        _vm.NormalizeUpdatePeriod();
-        Assert.Equal(seconds.ToString(), _vm.UpdatePeriodText);
+        _vm.UpdatePeriod.Normalize();
+        Assert.Equal(seconds.ToString(), _vm.UpdatePeriod.Text);
     }
 
     [Theory]
@@ -257,12 +258,42 @@ public sealed class ConfigurationViewModelTests : IDisposable
     [InlineData("10")] // unchanged
     public void An_update_period_that_does_not_change_anything_is_ignored(string text)
     {
-        _vm.UpdatePeriodText = text;
+        _vm.UpdatePeriod.Text = text;
         Assert.Equal(10, _settings.UpdatePeriodSeconds);
-        Assert.Empty(_periods);
+        Assert.Equal(0, _monitorChanges);
         Assert.Equal(0, _saves);
-        _vm.NormalizeUpdatePeriod();
-        Assert.Equal("10", _vm.UpdatePeriodText);
+        _vm.UpdatePeriod.Normalize();
+        Assert.Equal("10", _vm.UpdatePeriod.Text);
+    }
+
+    [Theory]
+    [InlineData("35", 35)]
+    [InlineData("0", 0)]
+    [InlineData("-4", 0)]
+    [InlineData("100", 99)]
+    public void The_battery_low_charge_applies_clamped(string text, int percent)
+    {
+        _vm.BatteryLowPercent.Text = text;
+        Assert.Equal(percent, _settings.BatteryLowPercent);
+        Assert.Equal((1, 1), (_saves, _monitorChanges));
+        _vm.BatteryLowPercent.Normalize();
+        Assert.Equal(percent.ToString(), _vm.BatteryLowPercent.Text);
+        Assert.Equal((0, 99, percent), (_vm.BatteryLowPercent.Min, _vm.BatteryLowPercent.Max, _vm.BatteryLowPercent.Value));
+    }
+
+    [Theory]
+    [InlineData("5", 5)]
+    [InlineData("0", 0)]
+    [InlineData("1000", 600)]
+    public void The_battery_low_time_left_applies_clamped(string text, int minutes)
+    {
+        _vm.BatteryLowMinutes.Text = text;
+        Assert.Equal(minutes, _settings.BatteryLowMinutes);
+        Assert.Equal((1, 1), (_saves, _monitorChanges));
+        _vm.BatteryLowMinutes.Text = "x";
+        _vm.BatteryLowMinutes.Normalize();
+        Assert.Equal(minutes.ToString(), _vm.BatteryLowMinutes.Text);
+        Assert.Equal(1, _saves);
     }
 
     [Fact]

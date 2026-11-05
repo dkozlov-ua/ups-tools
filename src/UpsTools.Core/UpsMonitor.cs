@@ -51,6 +51,13 @@ public sealed class UpsMonitor : IAsyncDisposable
         }
     }
 
+    /// <summary>The limits of the events that depend on them, e.g. "Battery low"; apply from the next reading.</summary>
+    public EventRules Rules
+    {
+        get => _tracker.Rules;
+        set => _tracker.Rules = value;
+    }
+
     public void Start() => _loop ??= Task.Run(RunAsync);
 
     /// <summary>Skip the remaining wait and poll immediately.</summary>

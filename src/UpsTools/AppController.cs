@@ -45,10 +45,7 @@ public sealed class AppController
         EventScripts = new ObservableCollection<EventScriptsViewModel>(
             Enum.GetValues<UpsEventKind>().Select(kind => new EventScriptsViewModel(kind, Settings.ScriptsFor(kind), Elevated, Save)));
 
-        Configuration = new ConfigurationViewModel(Settings, Log, Save, period =>
-        {
-            if (_monitor is not null) _monitor.Period = period;
-        });
+        Configuration = new ConfigurationViewModel(Settings, Log, Save, ApplyToMonitor);
 
         Dashboard.SetDevice(Settings.Ups);
     }
@@ -93,7 +90,7 @@ public sealed class AppController
             return;
         }
 
-        var monitor = new UpsMonitor(connection, TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds));
+        var monitor = new UpsMonitor(connection, TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds)) { Rules = Settings.Rules() };
         monitor.Log += Log.Info;
         monitor.StatusUpdated += status => _ui.InvokeAsync(() =>
         {
@@ -124,6 +121,15 @@ public sealed class AppController
         Dashboard.SetLink(LinkStatus.Connecting);
         UpdateTray();
         monitor.Start();
+    }
+
+    /// <summary>Applies the settings the monitor uses: its period and the events' limits.</summary>
+    private void ApplyToMonitor()
+    {
+        if (_monitor is null) return;
+        var period = TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds);
+        if (_monitor.Period != period) _monitor.Period = period;
+        _monitor.Rules = Settings.Rules();
     }
 
     public async Task StopMonitoringAsync()
@@ -253,9 +259,10 @@ public sealed class AppController
             _gridLostAt = null;
         }
 
-        // The grid came back (or the UPS answers again): what was queued for the opposite state mustn't run now.
-        var opposite = kind.Opposite();
-        var skipped = StopChain(opposite, kind.Title());
+        // The grid came back (or the UPS answers again): what was queued for the earlier state mustn't run now.
+        var stopped = new List<(UpsEventKind, IReadOnlyList<string>)>();
+        foreach (var other in kind.Stops())
+            if (StopChain(other, kind.Title()) is { } skipped) stopped.Add((other, skipped));
 
         var notify = Settings.NotifyOn(kind);
         var chain = StartChain(kind, EventScripts.First(g => g.Kind == kind).EnabledActions.ToList(), kind.Title(),
@@ -264,8 +271,7 @@ public sealed class AppController
 
         // "UPS unreachable" comes without a reading; the last good one says when the UPS last answered.
         if (notify)
-            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, chain,
-                skipped is null ? null : (opposite, skipped)), DeviceTitle);
+            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, chain, stopped), DeviceTitle);
     }
 
     private void UpdateTray()

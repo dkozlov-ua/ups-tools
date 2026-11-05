@@ -57,6 +57,7 @@ public sealed class SettingsAndLogTests : IDisposable
         Assert.Null(settings.Ups);
         Assert.True(settings.CloseToTray);
         Assert.Equal(10, settings.UpdatePeriodSeconds);
+        Assert.Equal(new EventRules(20, 10), settings.Rules());
         Assert.Empty(settings.Scripts);
         Assert.All(Enum.GetValues<UpsEventKind>(), kind => Assert.True(settings.NotifyOn(kind)));
         Assert.Empty(_log.Recent);
@@ -70,6 +71,8 @@ public sealed class SettingsAndLogTests : IDisposable
             Ups = new PairedUps("bluetti-ble", "0C:4E:A0:E0:81:E6", "EL100V22527008220279", "EL100V2"),
             CloseToTray = false,
             UpdatePeriodSeconds = 30,
+            BatteryLowPercent = 35,
+            BatteryLowMinutes = 0,
             Notifications = { [UpsEventKind.UpsReachable] = false },
         };
         settings.ScriptsFor(UpsEventKind.GridLost).Add(new ScriptAction
@@ -86,6 +89,7 @@ public sealed class SettingsAndLogTests : IDisposable
         Assert.Equal(settings.Ups, loaded.Ups);
         Assert.False(loaded.CloseToTray);
         Assert.Equal(30, loaded.UpdatePeriodSeconds);
+        Assert.Equal(new EventRules(35, 0), loaded.Rules());
         Assert.False(loaded.NotifyOn(UpsEventKind.UpsReachable));
         Assert.True(loaded.NotifyOn(UpsEventKind.GridLost));
         var script = Assert.Single(loaded.ScriptsFor(UpsEventKind.GridLost));
@@ -104,6 +108,25 @@ public sealed class SettingsAndLogTests : IDisposable
     {
         _store.Save(new AppSettings { UpdatePeriodSeconds = saved });
         Assert.Equal(loaded, _store.Load().UpdatePeriodSeconds);
+    }
+
+    [Theory]
+    [InlineData(-1, 0, 601, 600)]
+    [InlineData(100, 99, -3, 0)]
+    [InlineData(50, 50, 30, 30)]
+    public void The_battery_low_limits_are_clamped_on_load(int percent, int loadedPercent, int minutes, int loadedMinutes)
+    {
+        _store.Save(new AppSettings { BatteryLowPercent = percent, BatteryLowMinutes = minutes });
+        Assert.Equal(new EventRules(loadedPercent, loadedMinutes), _store.Load().Rules());
+    }
+
+    [Fact]
+    public void Settings_from_an_older_version_get_the_default_battery_low_limits()
+    {
+        Directory.CreateDirectory(_store.Folder);
+        File.WriteAllText(_store.FilePath, """{ "CloseToTray": false, "UpdatePeriodSeconds": 30 }""");
+        var settings = _store.Load();
+        Assert.Equal((false, 20, 10), (settings.CloseToTray, settings.BatteryLowPercent, settings.BatteryLowMinutes));
     }
 
     [Fact]
@@ -229,7 +252,7 @@ public sealed class SettingsAndLogTests : IDisposable
     {
         _store.Save(new AppSettings());
         using var doc = JsonDocument.Parse(File.ReadAllText(_store.FilePath));
-        Assert.Equal(["Ups", "CloseToTray", "UpdatePeriodSeconds", "Scripts", "Notifications"],
+        Assert.Equal(["Ups", "CloseToTray", "UpdatePeriodSeconds", "BatteryLowPercent", "BatteryLowMinutes", "Scripts", "Notifications"],
             doc.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Contains("\n  \"CloseToTray\"", File.ReadAllText(_store.FilePath));
     }

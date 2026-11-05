@@ -71,16 +71,27 @@ public class UpsModelTests
     }
 
     [Theory]
-    [InlineData(UpsEventKind.GridLost, "Grid lost", UpsEventKind.GridRestored)]
-    [InlineData(UpsEventKind.GridRestored, "Grid restored", UpsEventKind.GridLost)]
-    [InlineData(UpsEventKind.UpsUnreachable, "UPS unreachable", UpsEventKind.UpsReachable)]
-    [InlineData(UpsEventKind.UpsReachable, "UPS reachable again", UpsEventKind.UpsUnreachable)]
-    public void Event_kinds_have_a_title_an_opposite_and_a_description(UpsEventKind kind, string title, UpsEventKind opposite)
+    [InlineData(UpsEventKind.GridLost, "Grid lost", new[] { UpsEventKind.GridRestored })]
+    [InlineData(UpsEventKind.BatteryLow, "Battery low", new UpsEventKind[0])]
+    [InlineData(UpsEventKind.GridRestored, "Grid restored", new[] { UpsEventKind.GridLost, UpsEventKind.BatteryLow })]
+    [InlineData(UpsEventKind.UpsUnreachable, "UPS unreachable", new[] { UpsEventKind.UpsReachable })]
+    [InlineData(UpsEventKind.UpsReachable, "UPS reachable again", new[] { UpsEventKind.UpsUnreachable })]
+    public void Event_kinds_have_a_title_the_events_they_stop_and_a_description(UpsEventKind kind, string title, UpsEventKind[] stops)
     {
         Assert.Equal(title, kind.Title());
-        Assert.Equal(opposite, kind.Opposite());
-        Assert.Equal(kind, kind.Opposite().Opposite());
+        Assert.Equal(stops, kind.Stops());
         Assert.EndsWith(".", kind.Description());
+    }
+
+    [Fact]
+    public void Grid_restored_stops_everything_queued_for_the_outage()
+    {
+        // Whatever stops one event's scripts is the event that undoes it.
+        foreach (var kind in Enum.GetValues<UpsEventKind>())
+            foreach (var stopped in kind.Stops())
+                Assert.NotEqual(kind, stopped);
+        Assert.Contains(UpsEventKind.BatteryLow, UpsEventKind.GridRestored.Stops());
+        Assert.DoesNotContain(UpsEventKind.BatteryLow, UpsEventKind.GridLost.Stops());
     }
 
     [Fact]
@@ -94,7 +105,7 @@ public class UpsModelTests
     {
         var unknown = (UpsEventKind)99;
         Assert.Equal("99", unknown.Title());
-        Assert.Equal(unknown, unknown.Opposite());
+        Assert.Empty(unknown.Stops());
         Assert.Equal("", unknown.Description());
     }
 
