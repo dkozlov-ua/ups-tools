@@ -2,6 +2,7 @@
 // Usage (from the repo root):  dotnet run tools/make-icon.cs
 #:package System.Drawing.Common@10.0.0
 #:property TargetFramework=net10.0-windows10.0.19041.0
+#:property PublishAot=false
 #pragma warning disable CA1416 // Windows-only APIs; this tool only runs on Windows.
 
 using System.Drawing;
@@ -63,6 +64,8 @@ static Bitmap Render(int size)
         g.SetClip(clip, CombineMode.Replace);
         using var gloss = new LinearGradientBrush(new PointF(0, tile.Top), new PointF(0, tile.Top + tile.Height * 0.55f),
             Color.FromArgb(70, 255, 255, 255), Color.FromArgb(0, 255, 255, 255));
+        // Without this the brush wraps around at its end, leaving a bright line at the bottom edge of the gloss.
+        gloss.WrapMode = WrapMode.TileFlipXY;
         g.FillRectangle(gloss, tile.Left, tile.Top, tile.Width, tile.Height * 0.55f);
         g.ResetClip();
 
