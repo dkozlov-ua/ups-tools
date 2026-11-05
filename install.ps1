@@ -26,9 +26,12 @@
       install.ps1 -Uninstall [-InstallDir <dir>]
 
       Deletes the package's own files, the shortcut, the Start with Windows
-      entry when it starts this installation, and the app's notification
-      registration and images (%LOCALAPPDATA%\UpsTools). The settings and the
-      log in %APPDATA%\UpsTools are the user's and are left.
+      entry when it starts this installation, the app's notification
+      registration and images (%LOCALAPPDATA%\UpsTools), and the scheduled
+      tasks of scripts set to run as administrator that start this
+      installation (\UpsTools in Task Scheduler; deleting them asks for
+      administrator rights once). The settings and the log in
+      %APPDATA%\UpsTools are the user's and are left.
 
     A RUNNING UPS TOOLS. The exe cannot be replaced while it runs, so a copy
     running from the target folder is asked to exit (the same signal as
@@ -90,6 +93,7 @@ $RunKey     = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $RunValue   = 'UpsTools'                   # StartupRegistration.cs
 $NotifyKey  = 'HKCU:\Software\Classes\AppUserModelId\DKozlov.UpsTools'   # Notifier.cs
 $NotifyCache = Join-Path $env:LOCALAPPDATA 'UpsTools'                    # Notifier.CacheFolder
+$TaskFolder = 'UpsTools'                   # ElevatedTasks.FolderPath, without the leading \
 
 # ---- saying things ---------------------------------------------------------
 # One line in the app's log, in AppLog's format, retried on a sharing violation.
@@ -219,6 +223,41 @@ function Remove-EmptyDirs([string]$root, [bool]$andRoot) {
 # ============================================================================
 # UNINSTALL
 # ============================================================================
+# "Run as administrator" scripts each have a task in \UpsTools that runs
+# "UpsTools.exe --run-script ..." (ElevatedTasks.cs). The ones that start this
+# installation are deleted, and the folder with them once it is empty. They were
+# registered with the highest privileges, so deleting them takes administrator
+# rights: one UAC prompt, and only when there is something to delete.
+function Remove-AdminTasks([string]$target) {
+    $service = New-Object -ComObject Schedule.Service
+    $service.Connect()
+    try { $folder = $service.GetFolder("\$TaskFolder") } catch { return }
+
+    $all = @($folder.GetTasks(1))   # 1: hidden ones too
+    $mine = @($all | Where-Object {
+        $exec = @($_.Definition.Actions | Where-Object { $_.Type -eq 0 })   # 0: run a program
+        $exec.Count -gt 0 -and (Test-Inside (Full $exec[0].Path) $target)
+    } | ForEach-Object { $_.Name })
+    if ($mine.Count -eq 0 -and $all.Count -gt 0) { return }   # only other installations' tasks
+
+    $names = ($mine | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ','
+    $script = @"
+`$s = New-Object -ComObject Schedule.Service; `$s.Connect()
+`$f = `$s.GetFolder('\$TaskFolder')
+foreach (`$n in @($names)) { `$f.DeleteTask(`$n, 0) }
+if (@(`$f.GetTasks(1)).Count -eq 0) { `$s.GetFolder('\').DeleteFolder('$TaskFolder', 0) }
+"@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    try {
+        $p = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -Verb RunAs -WindowStyle Hidden -Wait -PassThru `
+            -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded
+        if ($p.ExitCode -ne 0) { throw "exit code $($p.ExitCode)" }
+        Say "deleted the administrator tasks of $($mine.Count) script(s) (\$TaskFolder in Task Scheduler)"
+    } catch {
+        Say "left the administrator tasks of $($mine.Count) script(s) in Task Scheduler (\$TaskFolder): $($_.Exception.Message)"
+    }
+}
+
 function Invoke-Uninstall() {
     $target = Full $(if ($InstallDir) { $InstallDir } else { $DefaultDir })
     $files = Read-Manifest $target
@@ -256,6 +295,8 @@ function Invoke-Uninstall() {
             Remove-Item -Force -ErrorAction SilentlyContinue
         if (-not (Get-ChildItem -LiteralPath $NotifyCache -Force)) { Remove-Item -LiteralPath $NotifyCache -Force }
     }
+
+    Remove-AdminTasks $target
 
     Say "uninstalled UPS Tools from $target"
     if (Test-Path -LiteralPath $target) {

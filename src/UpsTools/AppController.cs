@@ -17,6 +17,7 @@ public sealed class AppController
     private TrayIcon? _tray;
     private Notifier? _notifier;
     private DateTimeOffset? _gridLostAt;
+    private readonly Dictionary<UpsEventKind, (ScriptChain Chain, CancellationTokenSource Cancel)> _chains = [];
 
     public AppController(Dispatcher ui)
     {
@@ -25,14 +26,15 @@ public sealed class AppController
         _store = new SettingsStore(Log);
         Settings = _store.Load();
         _drivers = new UpsDrivers(Log.Info);
-        _scripts = new ScriptRunner(Log);
+        Elevated = new ElevatedTasks(Log);
+        _scripts = new ScriptRunner(Log, Elevated);
 
         Dashboard = new DashboardViewModel();
         foreach (var entry in Log.Recent) Dashboard.AddActivity(entry);
         Log.EntryAdded += entry => _ui.InvokeAsync(() => Dashboard.AddActivity(entry));
 
         EventScripts = new ObservableCollection<EventScriptsViewModel>(
-            Enum.GetValues<UpsEventKind>().Select(kind => new EventScriptsViewModel(kind, Settings.ScriptsFor(kind), Save)));
+            Enum.GetValues<UpsEventKind>().Select(kind => new EventScriptsViewModel(kind, Settings.ScriptsFor(kind), Elevated, Save)));
 
         Configuration = new ConfigurationViewModel(Settings, Log, Save, period =>
         {
@@ -43,6 +45,7 @@ public sealed class AppController
     }
 
     public AppLog Log { get; }
+    public ElevatedTasks Elevated { get; }
     public AppSettings Settings { get; }
     public DashboardViewModel Dashboard { get; }
     public ObservableCollection<EventScriptsViewModel> EventScripts { get; }
@@ -143,19 +146,68 @@ public sealed class AppController
         if (old is not null) Log.Info($"Forgot {old.Name}");
     }
 
-    /// <returns>File names of the scripts that were started and of those that could not be.</returns>
-    public (List<string> Started, List<string> Failed) RunScripts(EventScriptsViewModel group, string reason)
-    {
-        var actions = group.EnabledActions.ToList();
-        if (actions.Count == 0) Log.Info($"{reason}: no scripts to run");
+    /// <summary>"Run now" on an event: its enabled scripts, as if the event had fired, without the notification.</summary>
+    public void RunScripts(EventScriptsViewModel group, string reason) =>
+        StartChain(group.Kind, group.EnabledActions.ToList(), reason, finished: (c, _) => NotifyProblems(c, "Manual run"));
 
-        List<string> started = [], failed = [];
-        foreach (var action in actions)
-            (_scripts.Run(action, reason) ? started : failed).Add(System.IO.Path.GetFileName(action.Path));
-        return (started, failed);
+    /// <summary>"Run now" on one script.</summary>
+    public void RunScript(ScriptAction action, string reason) =>
+        StartChain(null, [action], reason, finished: (c, _) => NotifyProblems(c, "Manual run"));
+
+    /// <summary>
+    /// Starts <paramref name="actions"/> in order (see <see cref="ScriptChain"/>) and returns the chain as it
+    /// stands once it is waiting for a script or done. For an event (<paramref name="kind"/>), the chain
+    /// replaces one of the same event that is still running, and the opposite event can stop it.
+    /// </summary>
+    /// <param name="finished">Called when the chain is done; the flag says whether it had to wait for a script.</param>
+    private ScriptChain StartChain(UpsEventKind? kind, IReadOnlyList<ScriptAction> actions, string reason,
+        Action<ScriptChain, bool> finished)
+    {
+        if (actions.Count == 0) Log.Info($"{reason}: no scripts to run");
+        if (kind is { } k) StopChain(k, $"{reason} started again");
+
+        var chain = new ScriptChain([.. actions.Select(a => new ScriptStep(System.IO.Path.GetFileName(a.Path), a.WaitForExit))]);
+        var cancel = new CancellationTokenSource();
+        if (kind is { } key) _chains[key] = (chain, cancel);
+
+        var run = chain.RunAsync((i, _, ct) => _scripts.RunAsync(actions[i], reason, ct), cancel.Token);
+        _ = FinishAsync();
+        return chain;
+
+        async Task FinishAsync()
+        {
+            var waited = !run.IsCompleted;
+            try { await run; }
+            finally
+            {
+                if (kind is { } key && _chains.TryGetValue(key, out var current) && current.Chain == chain) _chains.Remove(key);
+                cancel.Dispose();
+            }
+
+            if (chain.StoppedAt is { } stop && chain.Skipped.Count > 0)
+                Log.Warn($"{reason}: {stop.Name} failed, so {ScriptReport.List(chain.Skipped)} didn't run");
+            finished(chain, waited);
+        }
     }
 
-    public void RunScript(ScriptAction action, string reason) => _scripts.Run(action, reason);
+    /// <summary>Stops a running chain of <paramref name="kind"/>: it starts no more scripts.</summary>
+    /// <returns>The scripts it won't run, or null when none of that event was running.</returns>
+    private IReadOnlyList<string>? StopChain(UpsEventKind kind, string why)
+    {
+        if (!_chains.Remove(kind, out var running) || running.Chain.Done) return null;
+        var skipped = running.Chain.Pending;
+        running.Cancel.Cancel();
+        Log.Info(skipped.Count > 0
+            ? $"{why}: stopped the {kind.Title()} scripts; {ScriptReport.List(skipped)} won't run"
+            : $"{why}: stopped waiting for the {kind.Title()} scripts");
+        return skipped;
+    }
+
+    private void NotifyProblems(ScriptChain chain, string label)
+    {
+        if (ScriptReport.Problems(chain, label) is { } problem)
+            _notifier?.Show("scripts", TrayState.Problem, problem.Title, problem.Body, attribution: DeviceTitle, important: true);
+    }
 
     public void SendTestNotification()
     {
@@ -188,11 +240,19 @@ public sealed class AppController
             _gridLostAt = null;
         }
 
-        var (started, failed) = RunScripts(EventScripts.First(g => g.Kind == kind), kind.Title());
+        // The grid came back (or the UPS answers again): what was queued for the opposite state mustn't run now.
+        var opposite = kind.Opposite();
+        var skipped = StopChain(opposite, kind.Title());
+
+        var notify = Settings.NotifyOn(kind);
+        var chain = StartChain(kind, EventScripts.First(g => g.Kind == kind).EnabledActions.ToList(), kind.Title(),
+            // Problems found before the notification below went out are in it already.
+            finished: (c, waited) => { if (waited && notify) NotifyProblems(c, kind.Title()); });
 
         // "UPS unreachable" comes without a reading; the last good one says when the UPS last answered.
-        if (Settings.NotifyOn(kind))
-            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, started, failed), DeviceTitle);
+        if (notify)
+            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, chain,
+                skipped is null ? null : (opposite, skipped)), DeviceTitle);
     }
 
     private void UpdateTray()

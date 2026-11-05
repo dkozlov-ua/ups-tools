@@ -29,9 +29,18 @@ public sealed class AppSettings
 
 public sealed class ScriptAction
 {
+    /// <summary>Names the script's administrator task (<see cref="ElevatedTasks"/>).</summary>
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
     public string Path { get; set; } = "";
     public string Arguments { get; set; } = "";
     public bool Enabled { get; set; } = true;
+
+    /// <summary>The next script starts only after this one exits with code 0; if it fails, the rest are skipped.</summary>
+    public bool WaitForExit { get; set; }
+
+    /// <summary>Runs as administrator, through a scheduled task registered when this was turned on.</summary>
+    public bool RunElevated { get; set; }
 }
 
 /// <summary>Loads and saves <see cref="AppSettings"/> as JSON in %APPDATA%\UpsTools.</summary>

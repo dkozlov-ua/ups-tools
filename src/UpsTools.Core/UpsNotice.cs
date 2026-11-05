@@ -25,12 +25,12 @@ public sealed record UpsNotice(UpsEventKind Kind, NoticeTone Tone, string Title,
     /// <param name="kind">The event.</param>
     /// <param name="status">The reading the event was raised with; for "UPS unreachable", the last good reading.</param>
     /// <param name="outage">For "Grid restored": how long the UPS ran on battery, when known.</param>
-    /// <param name="started">File names of the scripts started for this event.</param>
-    /// <param name="failed">File names of the scripts that could not be started.</param>
+    /// <param name="scripts">This event's scripts, as they stand when the notification goes out.</param>
+    /// <param name="stopped">The opposite event's scripts that this event stopped, and the ones of them it skipped.</param>
     public static UpsNotice For(UpsEventKind kind, UpsStatus? status, TimeSpan? outage = null,
-        IReadOnlyList<string>? started = null, IReadOnlyList<string>? failed = null)
+        ScriptChain? scripts = null, (UpsEventKind Kind, IReadOnlyList<string> Skipped)? stopped = null)
     {
-        var footnote = Scripts(started ?? [], failed ?? []);
+        var footnote = ScriptReport.Footnote(scripts, stopped);
         var battery = status?.BatteryPercent is { } soc ? $"Battery {soc} %" : null;
 
         switch (kind)
@@ -92,19 +92,4 @@ public sealed record UpsNotice(UpsEventKind Kind, NoticeTone Tone, string Title,
         var present = parts.Where(p => p is not null).ToList();
         return present.Count == 0 ? null : string.Join(" · ", present);
     }
-
-    private static string? Scripts(IReadOnlyList<string> started, IReadOnlyList<string> failed)
-    {
-        var parts = new List<string>();
-        if (started.Count > 0) parts.Add("Started " + List(started));
-        if (failed.Count > 0) parts.Add((parts.Count == 0 ? "Couldn't start " : "couldn't start ") + List(failed));
-        return parts.Count == 0 ? null : string.Join("; ", parts);
-    }
-
-    private static string List(IReadOnlyList<string> names) => names.Count switch
-    {
-        1 => names[0],
-        2 => $"{names[0]} and {names[1]}",
-        _ => $"{names[0]}, {names[1]} and {names.Count - 2} more",
-    };
 }

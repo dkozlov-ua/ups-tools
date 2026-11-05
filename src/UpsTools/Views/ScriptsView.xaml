@@ -1,13 +1,14 @@
 <UserControl x:Class="UpsTools.Views.ScriptsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:UpsTools.ViewModels">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
+             xmlns:vm="clr-namespace:UpsTools.ViewModels"
+             AllowDrop="True" PreviewDragOver="View_PreviewDragOver" PreviewDrop="View_PreviewDrop">
+    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="10,14,10,12">
             <StackPanel Margin="6,0,6,6">
                 <TextBlock Text="Scripts" Style="{StaticResource PageTitle}" />
                 <TextBlock Style="{StaticResource Detail}" FontSize="13" Margin="0,2,0,0"
-                           Text="Run scripts when the UPS state changes. Scripts start in the listed order without waiting for each other. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
+                           Text="Run scripts when the UPS state changes, in the listed order (drag a script by its handle to reorder). A script set to wait must finish successfully before the next one starts; if it fails, the rest are skipped. When the grid comes back or the UPS answers again, the other event's scripts that haven't started yet are skipped. .ahk, .bat, .cmd and .exe files open with their Windows file association; .ps1 files run hidden through PowerShell." />
             </StackPanel>
 
             <ItemsControl ItemsSource="{Binding EventScripts}">
@@ -34,24 +35,52 @@
                                 <ItemsControl ItemsSource="{Binding Items}" Margin="0,6,0,0">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type vm:ScriptItemViewModel}">
-                                            <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Padding="0,8,0,4">
+                                            <!-- Named so drag and drop can find the row under the mouse. -->
+                                            <Border x:Name="ScriptRow" BorderThickness="0,1,0,0" Background="Transparent" KeyDown="Row_KeyDown"
+                                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Padding="0,8,0,6">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Move up" Click="MoveUp_Click" InputGestureText="Alt+Up" />
+                                                        <MenuItem Header="Move down" Click="MoveDown_Click" InputGestureText="Alt+Down" />
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="200" />
                                                         <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
 
-                                                    <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" MinWidth="0"
+                                                    <Border x:Name="Grip" Grid.RowSpan="3" Background="Transparent" Cursor="SizeAll"
+                                                            Padding="2,0,8,0" VerticalAlignment="Stretch" Focusable="True"
+                                                            FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
+                                                            ToolTip="Drag to change the order (or Alt+Up / Alt+Down)"
+                                                            PreviewMouseLeftButtonDown="Grip_PreviewMouseLeftButtonDown"
+                                                            PreviewMouseMove="Grip_PreviewMouseMove">
+                                                        <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE76F;" FontSize="14"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                    </Border>
+
+                                                    <CheckBox Grid.Column="1" IsChecked="{Binding Enabled}" VerticalAlignment="Center" MinWidth="0"
                                                               Margin="0,0,4,0" ToolTip="Enabled" />
 
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,12,0">
                                                         <StackPanel Orientation="Horizontal">
                                                             <TextBlock x:Name="Missing" FontFamily="{StaticResource IconFont}" Text="&#xE7BA;"
                                                                        Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,6,0"
                                                                        Visibility="Collapsed" ToolTip="File not found" />
+                                                            <TextBlock x:Name="Shield" FontFamily="{StaticResource IconFont}" Text="&#xEA18;"
+                                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,6,0"
+                                                                       Visibility="Collapsed" ToolTip="Runs as administrator" />
                                                             <TextBlock Text="{Binding FileName}" FontWeight="SemiBold"
                                                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                                                         </StackPanel>
@@ -59,9 +88,9 @@
                                                                    TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}" />
                                                     </StackPanel>
 
-                                                    <TextBox Grid.Column="2" Text="{Binding Arguments, UpdateSourceTrigger=LostFocus}"
+                                                    <TextBox Grid.Column="3" Text="{Binding Arguments, UpdateSourceTrigger=LostFocus}"
                                                              VerticalAlignment="Center" ToolTip="Command-line arguments (optional)" />
-                                                    <TextBlock Grid.Column="2" Text="Arguments" IsHitTestVisible="False" Margin="12,0,0,0"
+                                                    <TextBlock Grid.Column="3" Text="Arguments" IsHitTestVisible="False" Margin="12,0,0,0"
                                                                VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorTertiaryBrush}">
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock">
@@ -75,15 +104,39 @@
                                                         </TextBlock.Style>
                                                     </TextBlock>
 
-                                                    <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE768;"
+                                                    <Button Grid.Column="4" Style="{StaticResource IconButton}" Content="&#xE768;"
                                                             Click="RunScript_Click" ToolTip="Run this script now" Margin="8,0,0,0" />
-                                                    <Button Grid.Column="4" Style="{StaticResource IconButton}" Content="&#xE74D;"
+                                                    <Button Grid.Column="5" Style="{StaticResource IconButton}" Content="&#xE74D;"
                                                             Click="RemoveScript_Click" ToolTip="Remove" />
+
+                                                    <WrapPanel Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" Margin="0,4,0,0">
+                                                        <CheckBox IsChecked="{Binding WaitForExit}" MinWidth="0" Margin="0,0,24,0"
+                                                                  Content="Wait until it finishes"
+                                                                  ToolTip="The next script starts only after this one exits with exit code 0. If it fails (another exit code, or it can't be started), the scripts after it don't run." />
+                                                        <CheckBox IsChecked="{Binding RunElevated}" IsEnabled="{Binding IsIdle}" MinWidth="0"
+                                                                  Content="Run as administrator"
+                                                                  ToolTip="Runs elevated without a UAC prompt when the event fires, so it works with nobody at the PC. Ticking it asks for administrator rights once, to create a scheduled task (\UpsTools in Task Scheduler) that runs the script." />
+                                                    </WrapPanel>
+
+                                                    <StackPanel x:Name="Note" Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="4" Orientation="Horizontal"
+                                                                Margin="0,4,0,0"
+                                                                Visibility="{Binding HasElevationNote, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE7BA;" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource SystemFillColorCautionBrush}" Margin="0,0,6,0" />
+                                                        <TextBlock Text="{Binding ElevationNote}" Style="{StaticResource Detail}" VerticalAlignment="Center" />
+                                                        <Button Content="Repair" Click="Repair_Click" Margin="10,0,0,0" Padding="10,2"
+                                                                IsEnabled="{Binding IsIdle}"
+                                                                Visibility="{Binding CanRepair, Converter={StaticResource BoolToVisibility}}"
+                                                                ToolTip="Create the administrator task again (asks for administrator rights)" />
+                                                    </StackPanel>
                                                 </Grid>
                                             </Border>
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding Exists}" Value="False">
                                                     <Setter TargetName="Missing" Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding RunElevated}" Value="True">
+                                                    <Setter TargetName="Shield" Property="Visibility" Value="Visible" />
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>

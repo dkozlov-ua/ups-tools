@@ -20,6 +20,16 @@ public static class UpsEventKindExtensions
         _ => kind.ToString(),
     };
 
+    /// <summary>The event that undoes this one: its scripts stop when this one fires.</summary>
+    public static UpsEventKind Opposite(this UpsEventKind kind) => kind switch
+    {
+        UpsEventKind.GridLost => UpsEventKind.GridRestored,
+        UpsEventKind.GridRestored => UpsEventKind.GridLost,
+        UpsEventKind.UpsUnreachable => UpsEventKind.UpsReachable,
+        UpsEventKind.UpsReachable => UpsEventKind.UpsUnreachable,
+        _ => kind,
+    };
+
     public static string Description(this UpsEventKind kind) => kind switch
     {
         UpsEventKind.GridLost => "Mains power at the UPS input disappeared; the UPS is running on battery.",

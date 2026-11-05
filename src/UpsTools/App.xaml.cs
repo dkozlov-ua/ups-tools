@@ -25,6 +25,10 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Started by a script's administrator task: run the script, report its exit code, show nothing.
+        if (ElevatedTasks.IsRunScript(e.Args))
+            Environment.Exit(ScriptRunner.RunFromTask(ElevatedTasks.RawCommandLine));
+
         var exitRequested = e.Args.Contains(ExitArgument, StringComparer.OrdinalIgnoreCase);
         _instanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out var isFirstInstance);
         if (!isFirstInstance || exitRequested)

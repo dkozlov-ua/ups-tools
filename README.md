@@ -8,6 +8,13 @@ e.g. pause games and put the NAS to sleep when the grid goes down, and wake the 
 - **Dashboard**: grid status, battery level, charge/discharge rate, estimated time on battery, input and output power, recent activity.
 - **Scripts**: attach any number of scripts to each event. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
   file association; `.ps1` files run hidden through PowerShell. Arguments are optional.
+  - They start in the listed order; drag a script by its handle (or Alt+Up / Alt+Down) to reorder.
+  - **Wait until it finishes**: the next script starts only after this one exits with code 0. If it fails (another exit
+    code, or it can't be started), the scripts after it are skipped, and a notification says so.
+  - **Run as administrator**: the script runs elevated without a UAC prompt when the event fires, so it works with
+    nobody at the PC (see [Scripts that run as administrator](#scripts-that-run-as-administrator)).
+  - When the grid comes back or the UPS answers again, the opposite event's scripts that haven't started yet are skipped:
+    e.g. *Grid lost* → `wait 5 minutes` (waited for) → `hibernate` doesn't hibernate the PC after a 2-minute outage.
 - **Notifications**: a Windows notification for each event, e.g. *Grid lost — running on battery: Battery 87 % ·
   about 6 h 10 m left at 120 W*, naming the scripts it started. *Grid restored* says how long the outage lasted and
   replaces the *Grid lost* notification; *UPS reachable again* replaces *UPS unreachable*. Clicking one opens the app.
@@ -60,8 +67,26 @@ It installs into `%LOCALAPPDATA%\Programs\UpsTools` with a *UPS Tools* Start men
 - Notifications are registered as *UPS Tools* (`HKCU\Software\Classes\AppUserModelId\DKozlov.UpsTools`); their images
   are in `%LOCALAPPDATA%\UpsTools`. Windows' own settings (Do not disturb, the per-app switch) decide whether they pop up.
 - `UpsTools.exe --background` starts hidden in the tray (used by "Start with Windows").
+- `UpsTools.exe --run-script "<path>" [arguments]` runs a script and exits with its exit code (used by the administrator
+  tasks).
 - `UpsTools.exe --exit` makes a running copy exit cleanly, e.g. before replacing the exe.
 - Set the environment variable `UPSTOOLS_TRACE=1` to log the Bluetooth protocol exchange for troubleshooting.
+
+### Scripts that run as administrator
+
+Ticking *Run as administrator* creates a scheduled task, `\UpsTools\script-<id>` in Task Scheduler, that runs
+`UpsTools.exe --run-script "<script>" <arguments>` with the highest privileges. Creating it asks for administrator rights
+once. When the event fires, UPS Tools starts the task, which needs no prompt, and reads the script's exit code from it.
+The task runs on battery power too.
+
+- Changing the arguments updates the task, which asks for administrator rights again. Unticking the box or removing the
+  script deletes the task. If the task is missing or out of date (e.g. after restoring `settings.json` on another PC),
+  the script shows **Repair**.
+- Your Windows account must be an administrator. With a standard account, the task runs without elevation.
+- Anything running under your account can edit a script set to run as administrator, or UPS Tools itself, and have
+  it run elevated without a prompt. Keep those scripts in a folder only administrators can write to,
+  e.g. under `C:\Program Files`, if that matters to you.
+- `install.ps1 -Uninstall` deletes the tasks; that asks for administrator rights once.
 
 ## Development
 

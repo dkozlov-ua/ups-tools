@@ -82,6 +82,22 @@ public class UpsNoticeTests
     [InlineData(new[] { "a.ahk", "b.ahk", "c.ahk", "d.ahk" }, new string[0], "Started a.ahk, b.ahk and 2 more")]
     [InlineData(new[] { "a.ahk" }, new[] { "gone.bat" }, "Started a.ahk; couldn't start gone.bat")]
     [InlineData(new string[0], new[] { "gone.bat" }, "Couldn't start gone.bat")]
-    public void Footnote_lists_the_scripts(string[] started, string[] failed, string expected) =>
-        Assert.Equal(expected, UpsNotice.For(UpsEventKind.GridLost, OnBattery, null, started, failed).Footnote);
+    public void Footnote_lists_the_scripts(string[] started, string[] failed, string expected)
+    {
+        var chain = new ScriptChain([.. started.Concat(failed).Select(n => new ScriptStep(n, false))]);
+        _ = chain.RunAsync((_, step, _) => Task.FromResult(failed.Contains(step.Name)
+            ? StepResult.Failure("file not found")
+            : StepResult.Success), CancellationToken.None);
+        Assert.Equal(expected, UpsNotice.For(UpsEventKind.GridLost, OnBattery, null, chain).Footnote);
+    }
+
+    [Fact]
+    public void Grid_restored_says_which_grid_lost_scripts_it_stopped()
+    {
+        var chain = new ScriptChain([new ScriptStep("wake_nas.ahk", false)]);
+        _ = chain.RunAsync((_, _, _) => Task.FromResult(StepResult.Success), CancellationToken.None);
+        var notice = UpsNotice.For(UpsEventKind.GridRestored, null, null, chain,
+            (UpsEventKind.GridLost, ["hibernate.ps1"]));
+        Assert.Equal("Stopped the Grid lost scripts before hibernate.ps1; started wake_nas.ahk", notice.Footnote);
+    }
 }
