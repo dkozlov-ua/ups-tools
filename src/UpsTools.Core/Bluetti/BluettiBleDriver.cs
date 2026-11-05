@@ -47,7 +47,10 @@ public sealed class BluettiBleDriver(Action<string>? log = null) : IUpsDriver
     {
         var model = BluettiModels.FromName(device.Model)
                     ?? throw new NotSupportedException($"Bluetti model '{device.Model}' is not supported");
-        return new BluettiBleConnection(BluetoothAddressFormat.Parse(device.Address), model, log);
+        var address = BluetoothAddressFormat.Parse(device.Address);
+        Action<string>? trace = BluettiConnection.TraceEnabled ? message => log?.Invoke($"[trace] {message}") : null;
+        return new BluettiConnection(model, BluetoothAddressFormat.Format(address),
+            ct => GattLink.ConnectAsync(address, trace, ct), log);
     }
 
     private static async Task EnsureBluetoothOnAsync()

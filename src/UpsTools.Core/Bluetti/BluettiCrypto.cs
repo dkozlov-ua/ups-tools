@@ -17,11 +17,12 @@ namespace UpsTools.Core.Bluetti;
 ///
 /// The static keys were extracted from the official app by the community; they are the same for every unit.
 /// </summary>
-internal sealed class BluettiCrypto : IDisposable
+/// <param name="deviceSigningKey">The public key the device's key is signed with: K2 unless a test says otherwise.</param>
+internal sealed class BluettiCrypto(byte[]? deviceSigningKey = null) : IDisposable
 {
     private const int AesBlock = 16;
 
-    private static readonly byte[] StaticAesKey = Convert.FromHexString("459FC535808941F17091E0993EE3E93D");
+    internal static readonly byte[] StaticAesKey = Convert.FromHexString("459FC535808941F17091E0993EE3E93D");
 
     // App signing key "L1" (private scalar and its public point).
     internal static readonly byte[] L1D = Convert.FromHexString("4F19A16E3E87BDD9BD24D3E5495B88041511943CBC8B969ADE9641D0F56AF337");
@@ -100,7 +101,7 @@ internal sealed class BluettiCrypto : IDisposable
         var peerPoint = data[..64];
         var signature = data[64..];
 
-        using (var k2 = ECDsa.Create(PublicParameters(K2Q)))
+        using (var k2 = ECDsa.Create(PublicParameters(deviceSigningKey ?? K2Q)))
         {
             if (!k2.VerifyData([.. peerPoint, .. _tempIv], signature, HashAlgorithmName.SHA256))
                 throw new CryptographicException("Device public key signature is invalid");

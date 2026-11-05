@@ -14,9 +14,10 @@ public enum UpsLinkState
 /// </summary>
 public sealed class UpsMonitor : IAsyncDisposable
 {
-    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultReadTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IUpsConnection _connection;
+    private readonly TimeSpan _readTimeout;
     private readonly UpsStateTracker _tracker = new();
     private readonly CancellationTokenSource _stop = new();
     private CancellationTokenSource _wake = new();
@@ -24,10 +25,12 @@ public sealed class UpsMonitor : IAsyncDisposable
     private TimeSpan _period;
     private string? _lastError; // repeated identical failures are logged once
 
-    public UpsMonitor(IUpsConnection connection, TimeSpan period)
+    /// <param name="readTimeout">A read that takes longer counts as failed (30 s unless a test says otherwise).</param>
+    public UpsMonitor(IUpsConnection connection, TimeSpan period, TimeSpan? readTimeout = null)
     {
         _connection = connection;
         _period = period;
+        _readTimeout = readTimeout ?? DefaultReadTimeout;
     }
 
     public event Action<UpsStatus>? StatusUpdated;
@@ -87,7 +90,7 @@ public sealed class UpsMonitor : IAsyncDisposable
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-            timeout.CancelAfter(ReadTimeout);
+            timeout.CancelAfter(_readTimeout);
             status = await _connection.ReadAsync(timeout.Token);
             LastStatus = status;
             _lastError = null;
