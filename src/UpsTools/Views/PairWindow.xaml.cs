@@ -48,7 +48,9 @@ public partial class PairWindow : Window
         try
         {
             await Task.WhenAll(_drivers.Select(driver =>
-                driver.DiscoverAsync(device => Dispatcher.InvokeAsync(() => AddOrUpdate(device)), ScanDuration, work.Token)));
+                driver.DiscoverAsync(Found, ScanDuration, work.Token)));
+            // Devices reported from another thread at the last moment are still queued: add them before counting.
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
 
             if (work.IsCancellationRequested) return;
             SetState(Mode.Idle, _found.Count switch
@@ -63,6 +65,12 @@ public partial class PairWindow : Window
         {
             SetState(Mode.Idle, $"Scan failed: {ex.Message}", error: true);
         }
+    }
+
+    private void Found(DiscoveredUps device)
+    {
+        if (Dispatcher.CheckAccess()) AddOrUpdate(device);
+        else Dispatcher.InvokeAsync(() => AddOrUpdate(device));
     }
 
     private void AddOrUpdate(DiscoveredUps device)

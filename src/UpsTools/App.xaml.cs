@@ -138,7 +138,8 @@ public partial class App : Application
 
         if (_controller?.Settings.CloseToTray != true)
         {
-            _ = ExitAsync();
+            // Not from inside Closing: ExitAsync closes the window, which WPF refuses while it is closing.
+            Dispatcher.InvokeAsync(() => _ = ExitAsync());
             return;
         }
 

@@ -64,6 +64,7 @@
                                                             FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
                                                             ToolTip="Drag to change the order (or Alt+Up / Alt+Down)"
                                                             PreviewMouseLeftButtonDown="Grip_PreviewMouseLeftButtonDown"
+                                                            PreviewMouseLeftButtonUp="Grip_PreviewMouseLeftButtonUp"
                                                             PreviewMouseMove="Grip_PreviewMouseMove">
                                                         <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE76F;" FontSize="14"
                                                                    VerticalAlignment="Center"

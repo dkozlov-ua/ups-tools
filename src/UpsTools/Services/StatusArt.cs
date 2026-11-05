@@ -20,7 +20,7 @@ internal static class StatusArt
     private static readonly double TileDark = Luma(0x0E, 0x74, 0x90);
 
     public static Stream OpenAppIcon() =>
-        System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico")).Stream;
+        System.Windows.Application.GetResourceStream(new Uri("/UpsTools;component/Assets/app.ico", UriKind.Relative)).Stream;
 
     /// <summary>The app icon at <paramref name="size"/> pixels, scaled from its largest frame.</summary>
     public static Drawing.Bitmap Render(int size, TrayState state)

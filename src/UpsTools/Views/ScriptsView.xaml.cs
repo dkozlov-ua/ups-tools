@@ -104,7 +104,20 @@ public partial class ScriptsView : UserControl
     {
         _pressed = (sender as FrameworkElement)?.DataContext as ScriptItemViewModel;
         _pressedAt = e.GetPosition(this);
-        (sender as UIElement)?.Focus();
+        if (sender is UIElement grip)
+        {
+            grip.Focus();
+            // The handle is narrow: without the capture, a quick drag leaves it before it counts as one.
+            grip.CaptureMouse();
+        }
+    }
+
+    private void Grip_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => EndPress(sender);
+
+    private void EndPress(object sender)
+    {
+        _pressed = null;
+        if (sender is UIElement { IsMouseCaptured: true } grip) grip.ReleaseMouseCapture();
     }
 
     private void Grip_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -112,7 +125,7 @@ public partial class ScriptsView : UserControl
         if (_pressed is not { } item) return;
         if (e.LeftButton != MouseButtonState.Pressed)
         {
-            _pressed = null;
+            EndPress(sender);
             return;
         }
 
@@ -120,7 +133,7 @@ public partial class ScriptsView : UserControl
         if (Math.Abs(moved.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(moved.Y) < SystemParameters.MinimumVerticalDragDistance) return;
 
-        _pressed = null;
+        EndPress(sender);
         var row = RowOf(sender as DependencyObject);
         if (row is not null) row.Opacity = 0.5;
         try
