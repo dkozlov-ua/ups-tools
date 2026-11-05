@@ -71,7 +71,6 @@ public class ModbusAndParserTests
         Assert.Equal(0, status.DcInputW);
         Assert.Equal(0, status.DcOutputW);
         Assert.Equal(0, status.BatteryFlowW);
-        Assert.Null(status.ReportedRuntime); // placeholder value while on grid
         // 1024 Wh at 100 % and 157 W load ≈ 6.5 h
         Assert.Equal(1024.0 / 157, status.EstimatedRuntime!.Value.TotalHours, 3);
     }
@@ -92,14 +91,14 @@ public class ModbusAndParserTests
         Assert.False(status.GridPresent);
         Assert.Equal(75, status.BatteryPercent);
         Assert.Equal(-157, status.BatteryFlowW);
-        Assert.Equal(TimeSpan.FromMinutes(42), status.ReportedRuntime); // the EL100V2 counts minutes
-        Assert.Equal(TimeSpan.FromMinutes(42), status.EstimatedRuntime);
+        // Register 104 says 42 minutes; the runtime comes from 75 % of 1024 Wh at 157 W instead.
+        Assert.Equal(1024 * 0.75 / 157, status.EstimatedRuntime!.Value.TotalHours, 3);
     }
 
     [Fact]
-    public void A_real_el100v2_on_battery_reports_minutes_and_its_optimism_is_capped()
+    public void The_upss_own_runtime_estimate_is_ignored()
     {
-        // Seen on a real Elite 100 V2 (2026-11-05): 98 %, 223 W out, register 104 = 405 and falling by one a minute.
+        // Seen on a real Elite 100 V2 (2026-11-05): 98 %, 223 W out, register 104 = 405 (minutes; 6 h 45 m).
         var model = BluettiModels.FromName("EL100V2")!;
         var blocks = new Dictionary<RegisterBlock, byte[]>(RealEl100V2OnGrid)
         {
@@ -110,46 +109,7 @@ public class ModbusAndParserTests
 
         var status = BluettiStatusParser.Parse(model, blocks, DateTimeOffset.UnixEpoch);
 
-        Assert.Equal(TimeSpan.FromMinutes(405), status.ReportedRuntime); // 6 h 45 m, not 40.5 h
-        // More than 1024 Wh could give at 223 W; the stored energy over the load is used instead (≈ 4.5 h).
-        Assert.False(status.UsesReportedRuntime);
-        Assert.Equal(1024 * 0.98 / 223, status.EstimatedRuntime!.Value.TotalHours, 3);
-    }
-
-    [Fact]
-    public void The_99_9_hour_placeholder_is_no_estimate_even_on_battery()
-    {
-        var model = BluettiModels.FromName("EL100V2")!;
-        var blocks = new Dictionary<RegisterBlock, byte[]>(RealEl100V2OnGrid) { [new(1314, 2)] = Hex("00000000") };
-
-        var status = BluettiStatusParser.Parse(model, blocks, DateTimeOffset.UnixEpoch); // register 104 = 5994
-
-        Assert.False(status.GridPresent);
-        Assert.Null(status.ReportedRuntime);
-    }
-
-    [Theory]
-    [InlineData("EL100V2", 1.0 / 60)]
-    [InlineData("EL30V2", 1.0 / 60)]
-    [InlineData("EL10", 1.0 / 60)]
-    [InlineData("AC70", 0.1)]
-    [InlineData("AC2P", 0.1)]
-    public void The_runtime_unit_depends_on_the_model(string name, double hours)
-    {
-        Assert.Equal(TimeSpan.FromHours(hours).TotalSeconds, BluettiModels.FromName(name)!.RuntimeUnit.TotalSeconds, 6);
-    }
-
-    [Fact]
-    public void Models_counting_tenths_of_an_hour_read_them_so()
-    {
-        var model = BluettiModels.FromName("AC70")!;
-        var blocks = new Dictionary<RegisterBlock, byte[]>(RealEl100V2OnGrid)
-        {
-            [new(102, 18)] = Hex("004b0000002a002a" + new string('0', 56)),
-            [new(1314, 2)] = Hex("00000000"),
-        };
-
-        Assert.Equal(TimeSpan.FromHours(4.2), BluettiStatusParser.Parse(model, blocks, DateTimeOffset.UnixEpoch).ReportedRuntime);
+        Assert.Equal(1024 * 0.98 / 223, status.EstimatedRuntime!.Value.TotalHours, 3); // ≈ 4.5 h
     }
 
     [Theory]

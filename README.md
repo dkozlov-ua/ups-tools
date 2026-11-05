@@ -43,8 +43,9 @@ the NAS when the grid comes back.
 
 Events fire on transitions only. The first reading after start-up is a baseline, so starting the app during an outage
 does not fire "Grid lost". *Battery low* is the exception: started on battery with the battery already low, it fires on
-the first reading. The time left is the lower of the UPS's own estimate and the stored energy divided by the current
-load, so it has to be at or below the limit in two readings in a row: a short spike in load doesn't count.
+the first reading. The time left is the stored energy divided by the average load of the last 5 minutes (the UPS's own
+estimate isn't used: it runs far longer than the battery can last), and it has to be at or below the limit in two
+readings in a row.
 
 With a wait before *Grid lost* (Configuration → Events), a blip shorter than the wait fires nothing: no scripts, no
 notification, only a line in the log. Once the wait is over, *Grid lost* fires, and the outage (in *Grid restored* and
@@ -109,7 +110,7 @@ doesn't report, or that doesn't apply, isn't set.
 | `UPS_GRID` | `1` with mains power at the UPS input, `0` on battery |
 | `UPS_REACHABLE` | `1` while the UPS answers, `0` when it is unreachable (the readings are then its last ones) |
 | `UPS_BATTERY_PERCENT` | Charge, e.g. `87` |
-| `UPS_RUNTIME_MINUTES` | Estimated minutes left on battery at the current load |
+| `UPS_RUNTIME_MINUTES` | Estimated minutes left on battery at the average load of the last 5 minutes |
 | `UPS_LOAD_W` | Output power in watts |
 | `UPS_OUTAGE_SECONDS` | For *Grid restored*, how long the outage lasted; on battery, how long it has lasted so far |
 | `UPS_MODEL`, `UPS_SERIAL` | The UPS |

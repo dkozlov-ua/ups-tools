@@ -12,7 +12,6 @@ internal readonly record struct RegisterBlock(ushort Start, ushort Count)
 internal static class BluettiStatusParser
 {
     private const ushort SocReg = 102;
-    private const ushort RuntimeReg = 104;   // in the model's RuntimeUnit; 99.9 h (5994 minutes) while on grid
     private const ushort ModelReg = 110;     // 6 registers, ASCII with bytes swapped per register
     private const ushort SerialReg = 116;    // 4 registers, least-significant word first
     private const ushort DcOutputReg = 140;
@@ -24,9 +23,6 @@ internal static class BluettiStatusParser
 
     /// <summary>Mains is considered present above this input voltage.</summary>
     internal const double GridVoltageThreshold = 80;
-
-    /// <summary>Runtime readings at or above this are placeholders ("99.9 h"), not estimates.</summary>
-    private static readonly TimeSpan RuntimePlaceholder = TimeSpan.FromHours(99.9);
 
     public static IReadOnlyList<RegisterBlock> BlocksFor(BluettiModel model) => model.HasAcInputVoltage
         ? [new(SocReg, 18), new(DcOutputReg, 8), new(AcInputVoltageReg, 2), new(AcOutputVoltageReg, 1)]
@@ -60,13 +56,6 @@ internal static class BluettiStatusParser
             ? acInputVoltage is { } v ? v >= GridVoltageThreshold : null
             : acInputW is { } p ? p > 0 : null;
 
-        TimeSpan? runtime = null;
-        if (grid == false && Reg(RuntimeReg) is { } raw and > 0)
-        {
-            var value = model.RuntimeUnit * raw;
-            if (value < RuntimePlaceholder) runtime = value;
-        }
-
         var soc = Reg(SocReg);
 
         return new UpsStatus
@@ -83,7 +72,6 @@ internal static class BluettiStatusParser
             DcInputW = Reg(DcInputReg),
             AcOutputW = Reg(AcOutputReg),
             DcOutputW = Reg(DcOutputReg),
-            ReportedRuntime = runtime,
         };
     }
 

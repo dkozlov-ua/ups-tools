@@ -121,7 +121,9 @@ public class UpsStateTrackerTests
         Timestamp = DateTimeOffset.UnixEpoch,
         GridPresent = grid,
         BatteryPercent = battery,
-        ReportedRuntime = minutesLeft is { } m ? TimeSpan.FromMinutes(m) : null,
+        // At 60 W, a capacity of m * 100 / charge Wh lasts m minutes.
+        CapacityWh = minutesLeft is { } m ? battery is > 0 ? m * 100 / battery : 1 : null,
+        AcOutputW = 60,
     };
 
     [Fact]

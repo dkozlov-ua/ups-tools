@@ -4,26 +4,20 @@ namespace UpsTools.Core.Bluetti;
 /// <param name="CapacityWh">Nominal battery capacity, used to estimate runtime when the device doesn't report it.</param>
 /// <param name="HasAcInputVoltage">Whether register 1314 (AC input voltage) exists; otherwise grid is inferred from AC input power.</param>
 /// <param name="Tested">Confirmed against real hardware by this project.</param>
-public sealed record BluettiModel(string Name, double? CapacityWh, bool HasAcInputVoltage, bool Tested)
-{
-    /// <summary>
-    /// What one unit of the runtime register (104) stands for. The EL100V2 counts minutes (it falls by one a minute at a
-    /// steady load); bluetti-bt-lib reads it the same way for the EL10 and EL30V2, and as tenths of an hour for the rest.
-    /// </summary>
-    public TimeSpan RuntimeUnit { get; init; } = TimeSpan.FromHours(0.1);
-}
+public sealed record BluettiModel(string Name, double? CapacityWh, bool HasAcInputVoltage, bool Tested);
 
 /// <summary>
-/// Models sharing the "V2" register layout (SOC @102, runtime @104, powers @140–146, AC input voltage @1314),
-/// per the device maps in bluetti-bt-lib. Older V1 models (AC200M, AC300, EB3A, EP500…) use a different layout.
+/// Models sharing the "V2" register layout (SOC @102, powers @140–146, AC input voltage @1314), per the device maps in
+/// bluetti-bt-lib. Older V1 models (AC200M, AC300, EB3A, EP500…) use a different layout. The device's own runtime
+/// estimate (@104) isn't read: on the Elite 100 V2 it runs far longer than the battery can last.
 /// </summary>
 public static class BluettiModels
 {
     public static readonly IReadOnlyList<BluettiModel> All =
     [
-        new("EL100V2", 1024, HasAcInputVoltage: true, Tested: true) { RuntimeUnit = TimeSpan.FromMinutes(1) },
-        new("EL30V2", null, true, false) { RuntimeUnit = TimeSpan.FromMinutes(1) },
-        new("EL10", null, true, false) { RuntimeUnit = TimeSpan.FromMinutes(1) },
+        new("EL100V2", 1024, HasAcInputVoltage: true, Tested: true),
+        new("EL30V2", null, true, false),
+        new("EL10", null, true, false),
         new("AC180T", null, true, false),
         new("AC180P", null, true, false),
         new("AC180", null, true, false),

@@ -19,6 +19,8 @@ public class UpsMonitorTests
         public void Answer(bool? grid, int battery = 80) =>
             _steps.Writer.TryWrite(_ => Task.FromResult(Status(grid, battery)));
 
+        public void Answer(UpsStatus status) => _steps.Writer.TryWrite(_ => Task.FromResult(status));
+
         public void Fail(string message = "boom") =>
             _steps.Writer.TryWrite(_ => Task.FromException<UpsStatus>(new IOException(message)));
 
@@ -72,6 +74,22 @@ public class UpsMonitorTests
         monitor.Log += _log.Enqueue;
         monitor.Start();
         return monitor;
+    }
+
+    [Fact]
+    public async Task Readings_carry_the_average_load_of_the_last_minutes()
+    {
+        await using var monitor = Start();
+        var at = DateTimeOffset.Now;
+
+        _ups.Answer(Status(true) with { Timestamp = at, AcOutputW = 100 });
+        _ups.Answer(Status(false) with { Timestamp = at.AddSeconds(10), AcOutputW = 200 });
+        _ups.Answer(Status(false) with { Timestamp = at.AddMinutes(5).AddSeconds(5), AcOutputW = 300 }); // the first is out
+        await Wait.Until(() => _statuses.Count == 3);
+
+        Assert.Equal([100.0, 150.0, 250.0], _statuses.Select(s => s.AverageOutputW!.Value));
+        Assert.Equal(250, monitor.LastStatus!.AverageOutputW);
+        Assert.Equal(150, _raised.Single(e => e.Kind == UpsEventKind.GridLost).Status!.AverageOutputW); // events too
     }
 
     [Fact]

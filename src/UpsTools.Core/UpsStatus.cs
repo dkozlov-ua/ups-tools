@@ -22,8 +22,11 @@ public sealed record UpsStatus
     public double? AcOutputW { get; init; }
     public double? DcOutputW { get; init; }
 
-    /// <summary>Runtime as reported by the device itself, if it reports a plausible value.</summary>
-    public TimeSpan? ReportedRuntime { get; init; }
+    /// <summary>
+    /// <see cref="TotalOutputW"/> averaged over the last few minutes (<see cref="LoadAverage"/>); null on a reading that
+    /// hasn't been through one.
+    /// </summary>
+    public double? AverageOutputW { get; init; }
 
     public double? TotalInputW => Sum(AcInputW, DcInputW);
     public double? TotalOutputW => Sum(AcOutputW, DcOutputW);
@@ -34,21 +37,17 @@ public sealed record UpsStatus
     /// </summary>
     public double? BatteryFlowW => TotalInputW is { } input && TotalOutputW is { } output ? input - output : null;
 
-    /// <summary>Remaining energy divided by the current output power, when the capacity and a real load are known.</summary>
-    public TimeSpan? CalculatedRuntime =>
-        BatteryPercent is { } soc && CapacityWh is { } capacity && TotalOutputW is { } load && load >= 1
-            ? TimeSpan.FromHours(capacity * soc / 100.0 / load)
-            : null;
+    /// <summary>The load <see cref="EstimatedRuntime"/> is worked out for: the average one when known, else the current one.</summary>
+    public double? RuntimeLoadW => AverageOutputW ?? TotalOutputW;
 
     /// <summary>
-    /// How long the battery would last at the current load: the lower of the device's own figure and
-    /// <see cref="CalculatedRuntime"/>, so an optimistic device estimate can't delay "Battery low".
+    /// How long the battery would last: remaining energy divided by <see cref="RuntimeLoadW"/>, when the capacity and a
+    /// real load are known. The UPS's own estimate isn't used: the Elite 100 V2's runs far longer than its battery can.
     /// </summary>
-    public TimeSpan? EstimatedRuntime => UsesReportedRuntime ? ReportedRuntime : CalculatedRuntime;
-
-    /// <summary>Whether <see cref="EstimatedRuntime"/> is the device's own figure.</summary>
-    public bool UsesReportedRuntime =>
-        ReportedRuntime is { } reported && (CalculatedRuntime is not { } calculated || reported <= calculated);
+    public TimeSpan? EstimatedRuntime =>
+        BatteryPercent is { } soc && CapacityWh is { } capacity && RuntimeLoadW is { } load && load >= 1
+            ? TimeSpan.FromHours(capacity * soc / 100.0 / load)
+            : null;
 
     private static double? Sum(double? a, double? b) => a is null && b is null ? null : (a ?? 0) + (b ?? 0);
 }

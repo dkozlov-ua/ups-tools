@@ -103,7 +103,7 @@ public sealed record UpsNotice(UpsEventKind Kind, NoticeTone Tone, string Title,
     {
         if (status?.EstimatedRuntime is not { } runtime) return null;
         var left = $"about {UpsFormat.Duration(runtime)} left";
-        return status.TotalOutputW is { } load ? $"{left} at {UpsFormat.Watts(load)}" : left;
+        return status.RuntimeLoadW is { } load ? $"{left} at {UpsFormat.Watts(load)}" : left;
     }
 
     private static string? Join(params string?[] parts)

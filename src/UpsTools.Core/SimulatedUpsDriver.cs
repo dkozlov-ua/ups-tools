@@ -63,7 +63,6 @@ public sealed class SimulatedUpsDriver(string path) : IUpsDriver
         public double? DcInputW { get; init; }
         public double? AcOutputW { get; init; }
         public double? DcOutputW { get; init; }
-        public double? ReportedRuntimeMinutes { get; init; }
 
         public UpsStatus ToStatus(DateTimeOffset timestamp) => new()
         {
@@ -79,7 +78,6 @@ public sealed class SimulatedUpsDriver(string path) : IUpsDriver
             DcInputW = DcInputW,
             AcOutputW = AcOutputW,
             DcOutputW = DcOutputW,
-            ReportedRuntime = ReportedRuntimeMinutes is { } m ? TimeSpan.FromMinutes(m) : null,
         };
     }
 

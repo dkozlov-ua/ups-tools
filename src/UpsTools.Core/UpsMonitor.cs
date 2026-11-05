@@ -25,6 +25,7 @@ public sealed class UpsMonitor : IAsyncDisposable
     private readonly IUpsConnection _connection;
     private readonly TimeSpan _readTimeout;
     private readonly UpsStateTracker _tracker = new();
+    private readonly LoadAverage _load = new();
     private readonly CancellationTokenSource _stop = new();
     private CancellationTokenSource _wake = new();
     private Task? _loop;
@@ -123,7 +124,7 @@ public sealed class UpsMonitor : IAsyncDisposable
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
             timeout.CancelAfter(_readTimeout);
-            status = await _connection.ReadAsync(timeout.Token);
+            status = _load.Add(await _connection.ReadAsync(timeout.Token));
             LastStatus = status;
             _lastError = null;
             var waiting = _tracker.GridLostDue is not null;

@@ -95,27 +95,16 @@ public class BluettiProtocolTests
     {
         var blocks = new Dictionary<RegisterBlock, byte[]>(RealEl100V2OnGrid)
         {
-            // SOC 101 %, runtime 30072 minutes (beyond the 99.9 h placeholder), no model text
+            // SOC 101 %, no model text
             [new(102, 18)] = Hex("0065" + "0000" + "7578" + new string('0', 66)),
             [new(1314, 2)] = Hex("00000000"), // on battery: the runtime would count
         };
         var status = BluettiStatusParser.Parse(El100V2, blocks, DateTimeOffset.UnixEpoch);
 
         Assert.Null(status.BatteryPercent);
-        Assert.Null(status.ReportedRuntime);
+        Assert.Null(status.EstimatedRuntime);
         Assert.Equal("EL100V2", status.Model);
         Assert.Equal("0", status.Serial);
-    }
-
-    [Fact]
-    public void A_zero_runtime_on_battery_is_unknown()
-    {
-        var blocks = new Dictionary<RegisterBlock, byte[]>(RealEl100V2OnGrid)
-        {
-            [new(102, 18)] = Hex("0032" + new string('0', 68)),
-            [new(1314, 2)] = Hex("00000000"),
-        };
-        Assert.Null(BluettiStatusParser.Parse(El100V2, blocks, DateTimeOffset.UnixEpoch).ReportedRuntime);
     }
 
     [Theory]

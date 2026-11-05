@@ -21,14 +21,14 @@ public sealed class SimulatedUpsDriverTests : IDisposable
     [Fact]
     public async Task Each_read_reports_what_the_file_says()
     {
-        Write(new { GridPresent = false, BatteryPercent = 64, AcOutputW = 120, ReportedRuntimeMinutes = 90 });
+        Write(new { GridPresent = false, BatteryPercent = 64, CapacityWh = 1000, AcOutputW = 120 });
         await using var ups = Connect();
 
         var status = await ups.ReadAsync(CancellationToken.None);
         Assert.False(status.GridPresent);
         Assert.Equal(64, status.BatteryPercent);
         Assert.Equal(120, status.TotalOutputW);
-        Assert.Equal(TimeSpan.FromMinutes(90), status.EstimatedRuntime);
+        Assert.Equal(1000, status.CapacityWh);
         Assert.Equal("Simulator", status.Model);
         Assert.Equal("SIM0001", status.Serial);
 
@@ -36,7 +36,7 @@ public sealed class SimulatedUpsDriverTests : IDisposable
         status = await ups.ReadAsync(CancellationToken.None);
         Assert.True(status.GridPresent);
         Assert.Equal(100, status.BatteryPercent); // the default
-        Assert.Null(status.ReportedRuntime);
+        Assert.Equal(1024, status.CapacityWh);
     }
 
     [Fact]

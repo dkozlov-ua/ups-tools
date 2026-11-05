@@ -76,20 +76,13 @@ public class DashboardViewModelTests
     [Fact]
     public void A_reading_on_battery()
     {
-        _vm.Apply(Status with { GridPresent = false, BatteryPercent = 35, AcInputW = 0, ReportedRuntime = TimeSpan.FromMinutes(95) });
+        _vm.Apply(Status with { GridPresent = false, BatteryPercent = 35, AcInputW = 0, AverageOutputW = 160 });
 
         Assert.Equal((Tone.Bad, "Lost", "Running on battery"), (_vm.GridTone, _vm.GridValue, _vm.GridDetail));
         Assert.Equal(Tone.Warning, _vm.BatteryTone);
         Assert.Equal((Tone.Warning, "−157 W", "Discharging"), (_vm.FlowTone, _vm.FlowValue, _vm.FlowDetail));
-        Assert.Equal(("1 h 35 m", "Reported by the UPS"), (_vm.RuntimeValue, _vm.RuntimeDetail));
-    }
-
-    [Fact]
-    public void An_optimistic_runtime_from_the_UPS_is_shown_but_not_used()
-    {
-        _vm.Apply(Status with { GridPresent = false, BatteryPercent = 98, AcInputW = 0, ReportedRuntime = TimeSpan.FromMinutes(405) });
-
-        Assert.Equal(("6 h 23 m", "Estimated at the current 157 W load; the UPS says 6 h 45 m"), (_vm.RuntimeValue, _vm.RuntimeDetail));
+        // 35 % of 1024 Wh at 160 W
+        Assert.Equal(("2 h 14 m", "At 160 W, the average load of the last 5 minutes"), (_vm.RuntimeValue, _vm.RuntimeDetail));
     }
 
     [Theory]

@@ -29,35 +29,12 @@ public class UpsModelTests
     }
 
     [Fact]
-    public void Runtime_uses_the_devices_own_figure_when_it_is_lower()
+    public void Runtime_uses_the_average_load_when_there_is_one()
     {
-        var status = Status with
-        {
-            ReportedRuntime = TimeSpan.FromMinutes(42), BatteryPercent = 50, CapacityWh = 1000, AcOutputW = 100,
-        };
-        Assert.Equal(TimeSpan.FromHours(5), status.CalculatedRuntime);
-        Assert.True(status.UsesReportedRuntime);
-        Assert.Equal(TimeSpan.FromMinutes(42), status.EstimatedRuntime);
-    }
-
-    [Fact]
-    public void Runtime_ignores_a_device_figure_longer_than_the_stored_energy_allows()
-    {
-        var status = Status with
-        {
-            ReportedRuntime = TimeSpan.FromHours(7), BatteryPercent = 50, CapacityWh = 1000, AcOutputW = 100,
-        };
-        Assert.False(status.UsesReportedRuntime);
+        var status = Status with { BatteryPercent = 50, CapacityWh = 1000, AcOutputW = 250, AverageOutputW = 100 };
+        Assert.Equal(100, status.RuntimeLoadW);
         Assert.Equal(TimeSpan.FromHours(5), status.EstimatedRuntime);
-    }
-
-    [Fact]
-    public void Runtime_uses_the_devices_figure_when_it_cant_be_calculated()
-    {
-        var status = Status with { ReportedRuntime = TimeSpan.FromHours(7), BatteryPercent = 50, CapacityWh = null, AcOutputW = 100 };
-        Assert.Null(status.CalculatedRuntime);
-        Assert.True(status.UsesReportedRuntime);
-        Assert.Equal(TimeSpan.FromHours(7), status.EstimatedRuntime);
+        Assert.Null((status with { AverageOutputW = 0.5 }).EstimatedRuntime); // no real load on average
     }
 
     [Fact]

@@ -57,13 +57,13 @@ public sealed class DashboardUiTests : IDisposable
         var window = _app.Start()!;
         window.HasText("GridValue", "Online");
 
-        _app.Simulate(new { GridPresent = false, BatteryPercent = 79, AcInputW = 0, AcOutputW = 120, ReportedRuntimeMinutes = 300 });
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 50, CapacityWh = 1200, AcInputW = 0, AcOutputW = 120 });
 
         window.HasText("GridValue", "Lost");
         window.HasText("GridDetail", "Running on battery");
         window.HasText("FlowValue", "−120 W");
-        window.HasText("RuntimeValue", "5 h 00 m");
-        window.HasText("RuntimeDetail", "Reported by the UPS");
+        window.HasText("RuntimeValue", "5 h 00 m"); // 50 % of 1200 Wh at 120 W, the load all along
+        window.HasText("RuntimeDetail", "At 120 W, the average load of the last 5 minutes");
         Ui.Until(() => _app.Runs("lost.ps1") == 1, "the Grid lost script");
         Assert.Equal("ran now", File.ReadAllText(Path.Combine(_app.Work, "lost.ps1.out")).Trim());
         Assert.Contains(window.AllById("ActivityMessage"), m => m.Text() == "Grid lost");

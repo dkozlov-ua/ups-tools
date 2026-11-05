@@ -14,7 +14,7 @@ public class UpsNoticeTests
         BatteryPercent = 87,
         AcOutputW = 100,
         DcOutputW = 20,
-        ReportedRuntime = TimeSpan.FromMinutes(370),
+        CapacityWh = 1000,
     };
 
     [Fact]
@@ -22,7 +22,7 @@ public class UpsNoticeTests
     {
         var notice = UpsNotice.For(UpsEventKind.GridLost, OnBattery);
         Assert.Equal("Grid lost — running on battery", notice.Title);
-        Assert.Equal("Battery 87 % · about 6 h 10 m left at 120 W", notice.Body);
+        Assert.Equal("Battery 87 % · about 7 h 15 m left at 120 W", notice.Body);
         Assert.Null(notice.Footnote);
         Assert.Equal(NoticeTone.Warning, notice.Tone);
         Assert.True(notice.Important);
@@ -72,7 +72,7 @@ public class UpsNoticeTests
         Assert.Equal(NoticeTone.Good, back.Tone);
 
         var battery = UpsNotice.For(UpsEventKind.UpsReachable, OnBattery);
-        Assert.Equal("The UPS is answering again. On battery · Battery 87 % · about 6 h 10 m left at 120 W.", battery.Body);
+        Assert.Equal("The UPS is answering again. On battery · Battery 87 % · about 7 h 15 m left at 120 W.", battery.Body);
         Assert.Equal(NoticeTone.Warning, battery.Tone);
     }
 
@@ -107,7 +107,7 @@ public class UpsNoticeTests
         var notice = UpsNotice.For(UpsEventKind.BatteryLow, OnBattery, unreachable: true);
         Assert.Equal((NoticeTone.Problem, "Battery low — UPS unreachable", true), (notice.Tone, notice.Title, notice.Important));
         Assert.StartsWith("The UPS stopped answering while on battery, so its charge isn't known. Its last reading, at ", notice.Body);
-        Assert.EndsWith(": Battery 87 % · about 6 h 10 m left at 120 W.", notice.Body);
+        Assert.EndsWith(": Battery 87 % · about 7 h 15 m left at 120 W.", notice.Body);
 
         Assert.Equal("The UPS stopped answering while on battery, so its charge isn't known.",
             UpsNotice.For(UpsEventKind.BatteryLow, null, unreachable: true).Body);
@@ -126,8 +126,8 @@ public class UpsNoticeTests
     [Fact]
     public void Battery_low_is_an_important_problem_with_the_charge_and_time_left()
     {
-        var notice = UpsNotice.For(UpsEventKind.BatteryLow, OnBattery with { BatteryPercent = 18, ReportedRuntime = TimeSpan.FromMinutes(12) });
-        Assert.Equal((NoticeTone.Problem, "Battery low", "Battery 18 % · about 12 m left at 120 W", true),
+        var notice = UpsNotice.For(UpsEventKind.BatteryLow, OnBattery with { BatteryPercent = 3 });
+        Assert.Equal((NoticeTone.Problem, "Battery low", "Battery 3 % · about 15 m left at 120 W", true),
             (notice.Tone, notice.Title, notice.Body, notice.Important));
         Assert.Equal(UpsNotice.For(UpsEventKind.GridLost, null).Tag, notice.Tag); // replaces Grid lost; Grid restored replaces it
         Assert.Equal("The UPS battery is running low.", UpsNotice.For(UpsEventKind.BatteryLow, null).Body);
@@ -143,11 +143,17 @@ public class UpsNoticeTests
     }
 
     [Fact]
-    public void Grid_lost_without_a_known_load_still_gives_the_runtime()
+    public void Grid_lost_without_a_known_load_gives_no_runtime()
     {
         var status = OnBattery with { AcOutputW = null, DcOutputW = null };
-        Assert.Equal("Battery 87 % · about 6 h 10 m left", UpsNotice.For(UpsEventKind.GridLost, status).Body);
-        Assert.Equal("Battery 87 %", UpsNotice.For(UpsEventKind.GridLost, status with { ReportedRuntime = null }).Body);
+        Assert.Equal("Battery 87 %", UpsNotice.For(UpsEventKind.GridLost, status).Body);
+    }
+
+    [Fact]
+    public void The_runtime_is_for_the_average_load_when_there_is_one()
+    {
+        var status = OnBattery with { AverageOutputW = 145 };
+        Assert.Equal("Battery 87 % · about 6 h 00 m left at 145 W", UpsNotice.For(UpsEventKind.GridLost, status).Body);
     }
 
     [Fact]
