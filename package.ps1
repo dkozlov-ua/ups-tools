@@ -17,8 +17,9 @@
 
     NEEDS the .NET SDK and Inno Setup 6 (winget install JRSoftware.InnoSetup).
 
-    The test suite runs before anything is built, so a setup whose protocol or
-    event logic is broken is never written.
+    The tests run before anything is built, so a setup whose protocol or event
+    logic is broken is never written. The UI tests (tests\UpsTools.UiTests) are
+    left out: they take over the desktop. Run them before a release yourself.
 
     This file is read by Windows PowerShell 5.1 in the ANSI codepage: keep it
     ASCII.
@@ -76,7 +77,10 @@ if ($dirty) { Write-Warning "packaging what is not committed:`n$($dirty -join "`
 # ---- does it work ----------------------------------------------------------
 if (-not $SkipTests) {
     Write-Host '--- Testing ---'
-    Invoke-Checked 'dotnet test' { dotnet test (Join-Path $RepoRoot 'UpsTools.slnx') --configuration Release --nologo -p:Version=$Version }
+    Invoke-Checked 'dotnet test' {
+        dotnet test (Join-Path $RepoRoot 'UpsTools.slnx') --configuration Release --nologo -p:Version=$Version `
+            --filter 'FullyQualifiedName!~UpsTools.UiTests'
+    }
 }
 
 # ---- build -----------------------------------------------------------------

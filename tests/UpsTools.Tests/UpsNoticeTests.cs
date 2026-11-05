@@ -100,4 +100,50 @@ public class UpsNoticeTests
             (UpsEventKind.GridLost, ["hibernate.ps1"]));
         Assert.Equal("Stopped the Grid lost scripts before hibernate.ps1; started wake_nas.ahk", notice.Footnote);
     }
+
+    [Fact]
+    public void Only_lost_and_unreachable_are_important()
+    {
+        Assert.True(UpsNotice.For(UpsEventKind.GridLost, null).Important);
+        Assert.True(UpsNotice.For(UpsEventKind.UpsUnreachable, null).Important);
+        Assert.False(UpsNotice.For(UpsEventKind.GridRestored, null).Important);
+        Assert.False(UpsNotice.For(UpsEventKind.UpsReachable, null).Important);
+    }
+
+    [Fact]
+    public void Grid_lost_without_a_known_load_still_gives_the_runtime()
+    {
+        var status = OnBattery with { AcOutputW = null, DcOutputW = null };
+        Assert.Equal("Battery 87 % · about 6 h 10 m left", UpsNotice.For(UpsEventKind.GridLost, status).Body);
+        Assert.Equal("Battery 87 %", UpsNotice.For(UpsEventKind.GridLost, status with { ReportedRuntime = null }).Body);
+    }
+
+    [Fact]
+    public void Grid_restored_without_a_reading()
+    {
+        var notice = UpsNotice.For(UpsEventKind.GridRestored, null, TimeSpan.FromHours(2));
+        Assert.Equal("Power is back after 2 h 00 m on battery.", notice.Body);
+        Assert.Equal(NoticeTone.Good, notice.Tone);
+        Assert.Equal("grid", notice.Tag);
+    }
+
+    [Fact]
+    public void Reachable_again_without_a_grid_reading()
+    {
+        Assert.Equal("The UPS is answering again. Battery 87 %.",
+            UpsNotice.For(UpsEventKind.UpsReachable, OnBattery with { GridPresent = null }).Body);
+        var bare = UpsNotice.For(UpsEventKind.UpsReachable, null);
+        Assert.Equal("The UPS is answering again.", bare.Body);
+        Assert.Equal(NoticeTone.Good, bare.Tone);
+        Assert.Equal("link", bare.Tag);
+    }
+
+    [Fact]
+    public void An_unknown_event_gets_a_neutral_notice()
+    {
+        var notice = UpsNotice.For((UpsEventKind)99, null);
+        Assert.Equal(NoticeTone.Neutral, notice.Tone);
+        Assert.Equal("99", notice.Title);
+        Assert.Equal("", notice.Body);
+    }
 }

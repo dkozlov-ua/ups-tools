@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    End-to-end tests: they start UpsTools.exe (as a separate profile, with a simulated UPS) and drive its
+    windows with UI Automation and real mouse and keyboard input, so they take over the desktop while they
+    run. package.ps1 doesn't run them; run them with: dotnet test tests\UpsTools.UiTests
+  -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>UpsTools.UiTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only to build it and copy UpsTools.exe next to the tests: they treat it as a black box. -->
+    <ProjectReference Include="..\..\src\UpsTools\UpsTools.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -4,6 +4,8 @@
     <Project Path="src/UpsTools/UpsTools.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/UpsTools.App.Tests/UpsTools.App.Tests.csproj" />
     <Project Path="tests/UpsTools.Tests/UpsTools.Tests.csproj" />
+    <Project Path="tests/UpsTools.UiTests/UpsTools.UiTests.csproj" />
   </Folder>
 </Solution>

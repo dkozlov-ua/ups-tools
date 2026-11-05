@@ -1,0 +1,139 @@
+using System.Collections.Concurrent;
+using System.Threading.Channels;
+using UpsTools.Core;
+using UpsTools.Services;
+
+namespace UpsTools.AppTests.Support;
+
+/// <summary>A UPS driver whose one connection reads what the test queues, one reading per poll.</summary>
+internal sealed class FakeUps : IUpsDriver, IUpsConnection
+{
+    public const string DriverId = "fake";
+
+    private readonly Channel<Func<CancellationToken, Task<UpsStatus>>> _steps = Channel.CreateUnbounded<Func<CancellationToken, Task<UpsStatus>>>();
+
+    public static readonly PairedUps Paired = new(DriverId, "00:11:22:33:44:55", "FAKE123", "EL100V2");
+
+    public int Reads;
+    public int Resets;
+    public int Connections;
+    public bool Disposed;
+
+    public string Id => DriverId;
+    public string DisplayName => "Fake UPS";
+
+    public Task DiscoverAsync(Action<DiscoveredUps> onFound, TimeSpan duration, CancellationToken cancellationToken)
+    {
+        onFound(new DiscoveredUps(DriverId, Paired.Address, Paired.Name, Paired.Model, -50));
+        return Task.CompletedTask;
+    }
+
+    public IUpsConnection CreateConnection(PairedUps device)
+    {
+        Connections++;
+        Disposed = false;
+        return this;
+    }
+
+    public static UpsStatus Status(bool? grid, int battery = 80, double output = 120, DateTimeOffset? at = null) => new()
+    {
+        Timestamp = at ?? DateTimeOffset.Now,
+        Model = "EL100V2",
+        Serial = "2527008220279",
+        GridPresent = grid,
+        BatteryPercent = battery,
+        CapacityWh = 1024,
+        AcInputW = grid == true ? output : 0,
+        AcOutputW = output,
+    };
+
+    public void Answer(UpsStatus status) => _steps.Writer.TryWrite(_ => Task.FromResult(status));
+
+    public void Answer(bool? grid, int battery = 80, DateTimeOffset? at = null) => Answer(Status(grid, battery, at: at));
+
+    public void Fail(string message = "out of range") =>
+        _steps.Writer.TryWrite(_ => Task.FromException<UpsStatus>(new IOException(message)));
+
+    public async Task<UpsStatus> ReadAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref Reads);
+        var step = await _steps.Reader.ReadAsync(cancellationToken);
+        return await step(cancellationToken);
+    }
+
+    public Task ResetAsync()
+    {
+        Interlocked.Increment(ref Resets);
+        return Task.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Disposed = true;
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class FakeTray : ITray
+{
+    public (TrayState State, string Status) Current { get; private set; }
+    public List<(TrayState State, string Status)> Updates { get; } = [];
+    public List<(string Title, string Text, bool Warning)> Balloons { get; } = [];
+
+    public void Update(TrayState state, string status)
+    {
+        Current = (state, status);
+        Updates.Add(Current);
+    }
+
+    public void Notify(string title, string text, bool warning = false) => Balloons.Add((title, text, warning));
+}
+
+internal sealed class FakeNotifications : INotifications
+{
+    public sealed record Shown(string Tag, TrayState State, string Title, string Body, string? Footnote, string? Attribution, bool Important);
+
+    public List<Shown> All { get; } = [];
+    public List<UpsNotice> Notices { get; } = [];
+
+    public void Show(UpsNotice notice, string? attribution)
+    {
+        Notices.Add(notice);
+        All.Add(new(notice.Tag, Notifier.ToTray(notice.Tone), notice.Title, notice.Body, notice.Footnote, attribution, notice.Important));
+    }
+
+    public void Show(string tag, TrayState state, string title, string body, string? footnote = null,
+        string? attribution = null, bool important = false) =>
+        All.Add(new(tag, state, title, body, footnote, attribution, important));
+}
+
+/// <summary>Plays scripts for the controller: records each run; scripts set to wait finish when the test says.</summary>
+internal sealed class FakeScripts
+{
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<StepResult>> _running = new();
+
+    public ConcurrentQueue<(string Name, string Reason)> Ran { get; } = new();
+
+    /// <summary>Scripts that can't be started.</summary>
+    public HashSet<string> Broken { get; } = [];
+
+    public Task<StepResult> RunAsync(ScriptAction action, string reason, CancellationToken cancel)
+    {
+        var name = Path.GetFileName(action.Path);
+        Ran.Enqueue((name, reason));
+        if (Broken.Contains(name)) return Task.FromResult(StepResult.Failure("file not found"));
+        if (!action.WaitForExit) return Task.FromResult(StepResult.Success);
+
+        var exit = new TaskCompletionSource<StepResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        cancel.Register(() => exit.TrySetCanceled(cancel));
+        _running[name] = exit;
+        return exit.Task;
+    }
+
+    public bool IsRunning(string name) => _running.TryGetValue(name, out var exit) && !exit.Task.IsCompleted;
+
+    public void Exit(string name, int code = 0) =>
+        _running[name].SetResult(code == 0 ? StepResult.Success : StepResult.Failure($"exit code {code}"));
+
+    public IReadOnlyList<string> Names => Ran.Select(r => r.Name).ToList();
+}

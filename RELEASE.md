@@ -43,7 +43,9 @@ install, `/DIR=<folder>` for another folder, `/LOG=<file>` for a log. The uninst
 
 ## Cutting a release
 
-1. Make sure `main` has everything to ship and the tests pass: `dotnet test`.
+1. Make sure `main` has everything to ship and the tests pass: `dotnet test`, from an elevated shell so the
+   administrator-task tests run too. That includes the UI tests (`tests\UpsTools.UiTests`), which drive the app's
+   windows for about a minute: leave the mouse and keyboard alone meanwhile. `package.ps1` runs the others again.
 2. Pick `X.Y.Z` and write it into `VERSION`.
 3. Write the notes at `docs\release-notes\vX.Y.Z.md` (see below).
 4. Commit and push `main`.

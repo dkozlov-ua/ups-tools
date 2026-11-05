@@ -75,4 +75,42 @@ public class UpsStateTrackerTests
 
         Assert.Equal([UpsEventKind.UpsReachable, UpsEventKind.GridLost], tracker.OnSuccess(Status(false)));
     }
+
+    [Fact]
+    public void Reset_failures_forgives_the_streak_but_not_an_outage()
+    {
+        var tracker = new UpsStateTracker(failuresBeforeUnreachable: 3);
+        tracker.OnSuccess(Status(true));
+        tracker.OnFailure();
+        tracker.OnFailure();
+        tracker.ResetFailures();
+        Assert.Empty(tracker.OnFailure());
+        Assert.Empty(tracker.OnFailure());
+        Assert.Equal([UpsEventKind.UpsUnreachable], tracker.OnFailure());
+
+        tracker.ResetFailures();
+        Assert.Empty(tracker.OnFailure()); // still unreachable: no second event
+        Assert.Equal(false, tracker.Reachable);
+        Assert.Equal([UpsEventKind.UpsReachable], tracker.OnSuccess(Status(true)));
+    }
+
+    [Fact]
+    public void Starting_without_a_grid_reading_waits_for_one_as_the_baseline()
+    {
+        var tracker = new UpsStateTracker();
+        Assert.Empty(tracker.OnSuccess(Status(null)));
+        Assert.Null(tracker.GridPresent);
+        Assert.Equal(true, tracker.Reachable);
+        Assert.Empty(tracker.OnSuccess(Status(false)));
+        Assert.Equal([UpsEventKind.GridRestored], tracker.OnSuccess(Status(true)));
+    }
+
+    [Fact]
+    public void The_default_is_three_failures()
+    {
+        var tracker = new UpsStateTracker();
+        Assert.Empty(tracker.OnFailure());
+        Assert.Empty(tracker.OnFailure());
+        Assert.Equal([UpsEventKind.UpsUnreachable], tracker.OnFailure());
+    }
 }

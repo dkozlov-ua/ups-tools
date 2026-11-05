@@ -91,18 +91,36 @@ The task runs on battery power too.
 
 ```
 dotnet build
-dotnet test
+dotnet test tests/UpsTools.Tests        # protocol, monitor, events
+dotnet test tests/UpsTools.App.Tests    # services, view models, the app's controller
+dotnet test tests/UpsTools.UiTests      # end to end: drives the app's windows
 dotnet run --project src/UpsTools
 ```
 
 | Path | Contents |
 |---|---|
-| `src/UpsTools.Core` | Device-independent model (`UpsStatus`, `UpsMonitor`, `UpsStateTracker`, `IUpsDriver`) and the Bluetti BLE driver |
+| `src/UpsTools.Core` | Device-independent model (`UpsStatus`, `UpsMonitor`, `UpsStateTracker`, `IUpsDriver`), the Bluetti BLE driver and the simulated UPS |
 | `src/UpsTools` | WPF app (Fluent theme, tray icon, settings, script runner) |
-| `tests/UpsTools.Tests` | Protocol tests against reference vectors and a real Elite 100 V2 register dump |
+| `tests/UpsTools.Tests` | Core: the Bluetti protocol against reference vectors, a real Elite 100 V2 register dump and a simulated device (handshake, fragmented notifications, dropped links, stalls); the monitor, events, script chains, notification texts |
+| `tests/UpsTools.App.Tests` | App: settings, log, Start with Windows, notifications, scripts (real processes), administrator tasks (real Task Scheduler), the uninstaller, tray art, view models, and the controller with a scripted UPS |
+| `tests/UpsTools.UiTests` | End to end: starts `UpsTools.exe` with a simulated UPS and uses it through UI Automation and real mouse and keyboard input |
 | `tools/make-icon.cs` | Regenerates `app.ico`: `dotnet run tools/make-icon.cs` |
 | `VERSION` | The only version, `X.Y.Z` |
 | `installer/UpsTools.iss` | The Inno Setup script for the setup |
 | `package.ps1`, `publish.ps1` | Build the setup, publish a GitHub release: see [RELEASE.md](RELEASE.md) |
 
 To support another manufacturer, implement `IUpsDriver` / `IUpsConnection` and register it in `UpsDrivers`.
+
+### Testing
+
+- **Profiles.** `UpsTools.exe --profile name` (or `UPSTOOLS_PROFILE=name`) runs a separate copy: its own
+  settings and log (`%APPDATA%\UpsTools-name`), single-instance signals, Start with Windows entry, notification
+  registration and administrator tasks (`\UpsTools-name`). It neither touches nor talks to the installed copy, which
+  can keep running. The test suites run as such profiles and remove what they create.
+- **Simulated UPS.** With `UPSTOOLS_SIMULATOR` set to a JSON file, the simulator is the only UPS driver. Every poll
+  reads the file, e.g. `{"GridPresent": false, "BatteryPercent": 80, "AcOutputW": 120}`; `{"Fail": "message"}` makes
+  polls fail (see `SimulatedUpsDriver`). Find UPS finds it while the file exists.
+- **Administrator tasks.** The tests that register real scheduled tasks run only in an elevated shell; otherwise
+  they are skipped.
+- **UI tests** start the app, click, type and drag, so they need the desktop to themselves while they run (about
+  a minute): don't use the mouse or keyboard meanwhile. `package.ps1` doesn't run them.
