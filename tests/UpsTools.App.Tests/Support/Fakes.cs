@@ -114,13 +114,18 @@ internal sealed class FakeScripts
 
     public ConcurrentQueue<(string Name, string Reason)> Ran { get; } = new();
 
+    /// <summary>The environment variables each run got, by script name.</summary>
+    public ConcurrentDictionary<string, IReadOnlyDictionary<string, string?>> Variables { get; } = new();
+
     /// <summary>Scripts that can't be started.</summary>
     public HashSet<string> Broken { get; } = [];
 
-    public Task<StepResult> RunAsync(ScriptAction action, string reason, CancellationToken cancel)
+    public Task<StepResult> RunAsync(ScriptAction action, string reason, IReadOnlyDictionary<string, string?> variables,
+        CancellationToken cancel)
     {
         var name = Path.GetFileName(action.Path);
         Ran.Enqueue((name, reason));
+        Variables[name] = variables;
         if (Broken.Contains(name)) return Task.FromResult(StepResult.Failure("file not found"));
         if (!action.WaitForExit) return Task.FromResult(StepResult.Success);
 

@@ -153,12 +153,33 @@ public sealed class ElevatedTasksTests : IDisposable
         Assert.Null(await _tasks.RegisterAsync(failing));
         Assert.Null(await _tasks.RegisterAsync(quick));
 
-        Assert.Equal(StepResult.Failure("exit code 2"), await runner.RunAsync(failing, "Grid lost", CancellationToken.None));
+        Assert.Equal(StepResult.Failure("exit code 2"), await runner.RunAsync(failing, "Grid lost", ScriptEnvironment.None, CancellationToken.None));
         Assert.Contains(_log.Recent, e => e.Message.EndsWith(" as administrator; waiting for it to finish"));
 
-        Assert.True((await runner.RunAsync(quick, "Grid lost", CancellationToken.None)).Ok);
+        Assert.True((await runner.RunAsync(quick, "Grid lost", ScriptEnvironment.None, CancellationToken.None)).Ok);
         Assert.EndsWith(" as administrator", _log.Recent[^1].Message);
         await Wait.Until(() => File.Exists(quick.Path + ".out"), 20, "the task to run");
+    }
+
+    [AdminFact]
+    public async Task A_script_run_as_administrator_gets_the_variables_too()
+    {
+        var path = _folder.File($"admin-env-{Guid.NewGuid():N}.ps1", """
+            Set-Content -LiteralPath "$PSCommandPath.out" -Value "$env:UPS_EVENT|$env:UPS_BATTERY_PERCENT"
+            """);
+        var action = new ScriptAction { Path = path, Arguments = "-x", RunElevated = true, WaitForExit = true };
+        Assert.Null(await _tasks.RegisterAsync(action));
+        var variables = ScriptEnvironment.For(UpsEventKind.BatteryLow, new UpsStatus { Timestamp = DateTimeOffset.Now, BatteryPercent = 19 },
+            reachable: true, outage: null, manual: false);
+        try
+        {
+            Assert.True((await new ScriptRunner(_log, _tasks).RunAsync(action, "Battery low", variables, CancellationToken.None)).Ok);
+            Assert.Equal("BatteryLow|19", File.ReadAllText(path + ".out").Trim());
+        }
+        finally
+        {
+            File.Delete(ScriptEnvironmentFile.PathFor(action.Path, action.Arguments));
+        }
     }
 
     [AdminFact]
@@ -250,8 +271,11 @@ public sealed class ElevatedTasksTests : IDisposable
             key.SetValue("DisplayName", "UPS Tools");
         Directory.CreateDirectory(Notifier.CacheFolder);
         File.WriteAllText(Path.Combine(Notifier.CacheFolder, "app.png"), "png");
+        ScriptEnvironmentFile.Write(@"C:\s\a.ps1", "", ScriptEnvironment.None);
 
         Assert.Equal(0, await Uninstaller.RunAsync());
+
+        Assert.False(Directory.Exists(ScriptEnvironmentFile.Folder));
 
         Assert.False(StartupRegistration.IsEnabled);
         Assert.Null(Registry.CurrentUser.OpenSubKey($@"Software\Classes\AppUserModelId\{Notifier.AppUserModelId}"));

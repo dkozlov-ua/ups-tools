@@ -440,7 +440,80 @@ public sealed class AppControllerTests : IDisposable
         Assert.Null(_notes.Notices.Single().Footnote);
     }
 
+    [Fact]
+    public async Task Scripts_are_told_the_event_and_the_state_of_the_ups()
+    {
+        await Start(s =>
+        {
+            s.ScriptsFor(UpsEventKind.GridLost).Add(Script("lost.ps1"));
+            s.ScriptsFor(UpsEventKind.GridRestored).Add(Script("back.ps1"));
+            s.ScriptsFor(UpsEventKind.UpsUnreachable).Add(Script("gone.ps1"));
+        });
+        var t0 = DateTimeOffset.Now;
+        await Online(at: t0);
+        await GridLost(70, at: t0.AddMinutes(1));
+
+        var lost = _scripts.Variables["lost.ps1"];
+        Assert.Equal(("GridLost", null, "0", "1", "70", "358", "120"), (lost["UPS_EVENT"], lost["UPS_MANUAL"], lost["UPS_GRID"],
+            lost["UPS_REACHABLE"], lost["UPS_BATTERY_PERCENT"], lost["UPS_RUNTIME_MINUTES"], lost["UPS_LOAD_W"]));
+        Assert.Equal(("EL100V2", "2527008220279"), (lost["UPS_MODEL"], lost["UPS_SERIAL"]));
+        Assert.Equal("0", lost["UPS_OUTAGE_SECONDS"]);
+
+        _ups.Answer(true, 75, t0.AddMinutes(13.5));
+        await UiUntil(() => _scripts.Variables.ContainsKey("back.ps1"), "Grid restored");
+        var back = _scripts.Variables["back.ps1"];
+        Assert.Equal(("GridRestored", "1", "750"), (back["UPS_EVENT"], back["UPS_GRID"], back["UPS_OUTAGE_SECONDS"]));
+
+        _ups.Fail();
+        _ups.Fail();
+        _ups.Fail();
+        await UiUntil(() => _scripts.Variables.ContainsKey("gone.ps1"), "UPS unreachable");
+        var gone = _scripts.Variables["gone.ps1"];
+        Assert.Equal(("UpsUnreachable", "0", "75"), (gone["UPS_EVENT"], gone["UPS_REACHABLE"], gone["UPS_BATTERY_PERCENT"])); // the last reading
+        Assert.Null(gone["UPS_OUTAGE_SECONDS"]);
+    }
+
+    [Fact]
+    public async Task On_battery_the_scripts_are_told_how_long_the_outage_has_lasted()
+    {
+        await Start(s => s.ScriptsFor(UpsEventKind.BatteryLow).Add(Script("low.ps1")));
+        await Online();
+        await GridLost(50);
+        await Task.Delay(1100);
+        _ups.Answer(false, 20);
+        await UiUntil(() => _scripts.Variables.ContainsKey("low.ps1"), "Battery low");
+        Assert.InRange(int.Parse(_scripts.Variables["low.ps1"]["UPS_OUTAGE_SECONDS"]!), 1, 10);
+    }
+
     // ---- "Run now"
+
+    [Fact]
+    public async Task Run_now_tells_the_scripts_their_event_and_that_it_was_run_by_hand()
+    {
+        var controller = await Start(s => s.ScriptsFor(UpsEventKind.UpsReachable).AddRange([Script("a.ps1"), Script("b.ps1")]));
+        await Online(66);
+
+        await UiThread.Run(() => controller.RunScripts(controller.EventScripts.Single(g => g.Kind == UpsEventKind.UpsReachable), "Manual run"));
+        await UiThread.Run(() => controller.RunScript(controller.Settings.ScriptsFor(UpsEventKind.UpsReachable)[1], "Manual run"));
+        await Wait.Until(() => _scripts.Ran.Count == 3);
+
+        foreach (var name in new[] { "a.ps1", "b.ps1" })
+        {
+            var variables = _scripts.Variables[name];
+            Assert.Equal(("UpsReachable", "1", "1", "66"), (variables["UPS_EVENT"], variables["UPS_MANUAL"], variables["UPS_REACHABLE"], variables["UPS_BATTERY_PERCENT"]));
+        }
+    }
+
+    [Fact]
+    public async Task Without_monitoring_run_now_knows_nothing_about_the_ups()
+    {
+        var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).Add(Script("a.ps1")), monitor: false);
+        await UiThread.Run(() => controller.RunScripts(controller.EventScripts[0], "Manual run"));
+        var variables = _scripts.Variables["a.ps1"];
+        Assert.Equal(("GridLost", "1"), (variables["UPS_EVENT"], variables["UPS_MANUAL"]));
+        Assert.Null(variables["UPS_REACHABLE"]);
+        Assert.Null(variables["UPS_BATTERY_PERCENT"]);
+    }
 
     [Fact]
     public async Task Run_now_runs_an_events_enabled_scripts_without_a_notification()

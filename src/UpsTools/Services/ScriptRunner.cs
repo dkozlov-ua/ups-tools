@@ -20,7 +20,9 @@ public sealed class ScriptRunner(AppLog log, ElevatedTasks elevated)
     /// Starts the script. With <see cref="ScriptAction.WaitForExit"/>, returns once it has exited; cancelling
     /// stops the waiting (with <see cref="OperationCanceledException"/>), not the script.
     /// </summary>
-    public async Task<StepResult> RunAsync(ScriptAction action, string reason, CancellationToken cancel)
+    /// <param name="environment">Variables to set (or, when null, remove) for the script: <see cref="ScriptEnvironment"/>.</param>
+    public async Task<StepResult> RunAsync(ScriptAction action, string reason, IReadOnlyDictionary<string, string?> environment,
+        CancellationToken cancel)
     {
         var name = Path.GetFileName(action.Path);
         var how = action.RunElevated ? " as administrator" : "";
@@ -41,6 +43,7 @@ public sealed class ScriptRunner(AppLog log, ElevatedTasks elevated)
             ElevatedTasks.Run run;
             try
             {
+                ScriptEnvironmentFile.Write(action.Path, action.Arguments, environment);
                 run = elevated.Start(action);
             }
             catch (Exception ex)
@@ -62,7 +65,7 @@ public sealed class ScriptRunner(AppLog log, ElevatedTasks elevated)
         Process? process;
         try
         {
-            process = Start(action.Path, action.Arguments);
+            process = Start(action.Path, action.Arguments, environment);
         }
         catch (Exception ex)
         {
@@ -111,9 +114,12 @@ public sealed class ScriptRunner(AppLog log, ElevatedTasks elevated)
         _ => $"exit code 0x{exitCode:X8}", // HRESULTs, e.g. from Task Scheduler
     };
 
+    private static readonly Lock EnvironmentLock = new();
+
     /// <summary>Starts a script the way UPS Tools runs it, with or without administrator rights.</summary>
+    /// <param name="environment">Variables to set, or, when null, remove, for the script.</param>
     /// <returns>The process, or null when a file association handed the file to an existing process.</returns>
-    public static Process? Start(string path, string arguments)
+    public static Process? Start(string path, string arguments, IReadOnlyDictionary<string, string?>? environment = null)
     {
         var psi = Path.GetExtension(path).Equals(".ps1", StringComparison.OrdinalIgnoreCase)
             // Opening a .ps1 via its file association would just open it in an editor.
@@ -127,7 +133,31 @@ public sealed class ScriptRunner(AppLog log, ElevatedTasks elevated)
             : new ProcessStartInfo(path, arguments) { UseShellExecute = true };
 
         psi.WorkingDirectory = Path.GetDirectoryName(path) ?? "";
-        return Process.Start(psi);
+        if (environment is null || environment.Count == 0) return Process.Start(psi);
+
+        if (!psi.UseShellExecute)
+        {
+            foreach (var (name, value) in environment)
+                if (value is null) psi.Environment.Remove(name);
+                else psi.Environment[name] = value;
+            return Process.Start(psi);
+        }
+
+        // A file association can't be handed an environment: the script inherits this process's, so set it for the
+        // moment of the start.
+        lock (EnvironmentLock)
+        {
+            var saved = environment.Keys.ToDictionary(name => name, Environment.GetEnvironmentVariable);
+            try
+            {
+                foreach (var (name, value) in environment) Environment.SetEnvironmentVariable(name, value);
+                return Process.Start(psi);
+            }
+            finally
+            {
+                foreach (var (name, value) in saved) Environment.SetEnvironmentVariable(name, value);
+            }
+        }
     }
 
     /// <summary>
@@ -140,7 +170,8 @@ public sealed class ScriptRunner(AppLog log, ElevatedTasks elevated)
         if (!ElevatedTasks.TryParseRunScript(commandLine, out var path, out var arguments)) return CouldNotStartExitCode;
         try
         {
-            using var process = Start(path, arguments);
+            // The UPS state, as UPS Tools wrote it for this script just before starting the task.
+            using var process = Start(path, arguments, ScriptEnvironmentFile.Read(path, arguments) ?? ScriptEnvironment.None);
             if (process is null) return 0;
             process.WaitForExit();
             return process.ExitCode;

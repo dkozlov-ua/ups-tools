@@ -32,10 +32,109 @@ public sealed class ScriptRunnerTests : IDisposable
     private ScriptAction Action(string path, bool wait = true, string arguments = "") =>
         new() { Path = path, WaitForExit = wait, Arguments = arguments };
 
+    private static readonly IReadOnlyDictionary<string, string?> Variables = new Dictionary<string, string?>
+    {
+        ["UPS_EVENT"] = "GridLost",
+        ["UPS_BATTERY_PERCENT"] = "87",
+        ["UPS_MODEL"] = null, // removed
+    };
+
+    /// <summary>A .ps1 that records UPS_EVENT, UPS_BATTERY_PERCENT and UPS_MODEL in &lt;name&gt;.out.</summary>
+    private string EnvPs1(string name) => _folder.File(name, """
+        Set-Content -LiteralPath "$PSCommandPath.out" -Value ("$env:UPS_EVENT|$env:UPS_BATTERY_PERCENT|" + [bool](Test-Path Env:UPS_MODEL))
+        """);
+
+    // ---- the UPS state in environment variables
+
+    [Fact]
+    public async Task A_powershell_script_gets_the_variables_and_not_the_removed_ones()
+    {
+        Environment.SetEnvironmentVariable("UPS_MODEL", "inherited from UPS Tools");
+        try
+        {
+            var script = EnvPs1("env.ps1");
+            Assert.True((await _runner.RunAsync(Action(script), "Grid lost", Variables, CancellationToken.None)).Ok);
+            Assert.Equal("GridLost|87|False", File.ReadAllText(script + ".out").Trim());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("UPS_MODEL", null);
+        }
+    }
+
+    [Fact]
+    public async Task A_script_started_through_its_file_association_gets_them_too_and_this_process_keeps_its_own()
+    {
+        Environment.SetEnvironmentVariable("UPS_MODEL", "mine");
+        try
+        {
+            var cmd = _folder.File("env.cmd", "@echo %UPS_EVENT%^|%UPS_BATTERY_PERCENT%^|%UPS_MODEL%>\"%~f0.out\"\r\n");
+            Assert.True((await _runner.RunAsync(Action(cmd), "Grid lost", Variables, CancellationToken.None)).Ok);
+
+            Assert.Equal("GridLost|87|", File.ReadAllText(cmd + ".out").Trim());
+            Assert.Equal("mine", Environment.GetEnvironmentVariable("UPS_MODEL"));
+            Assert.Null(Environment.GetEnvironmentVariable("UPS_EVENT"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("UPS_MODEL", null);
+        }
+    }
+
+    [Fact]
+    public void Run_from_task_gets_the_variables_written_for_its_script()
+    {
+        var script = EnvPs1("task-env.ps1");
+        ScriptEnvironmentFile.Write(script, "x", Variables);
+        try
+        {
+            Assert.Equal(0, ScriptRunner.RunFromTask($"\"C:\\x\\UpsTools.exe\" --run-script \"{script}\" x"));
+            Assert.Equal("GridLost|87|False", File.ReadAllText(script + ".out").Trim());
+
+            // Not for the same script with other arguments.
+            Assert.Equal(0, ScriptRunner.RunFromTask($"\"C:\\x\\UpsTools.exe\" --run-script \"{script}\" y"));
+            Assert.Equal("||False", File.ReadAllText(script + ".out").Trim());
+        }
+        finally
+        {
+            File.Delete(ScriptEnvironmentFile.PathFor(script, "x"));
+        }
+    }
+
+    [Fact]
+    public void Variables_written_long_ago_are_ignored()
+    {
+        var script = EnvPs1("stale.ps1");
+        ScriptEnvironmentFile.Write(script, "", Variables, DateTimeOffset.Now - ScriptEnvironmentFile.MaxAge - TimeSpan.FromSeconds(1));
+        try
+        {
+            Assert.Null(ScriptEnvironmentFile.Read(script, ""));
+            ScriptEnvironmentFile.Write(script, "", Variables);
+            Assert.Equal(Variables, ScriptEnvironmentFile.Read(script, ""));
+            Assert.Null(ScriptEnvironmentFile.Read(script, "other"));
+        }
+        finally
+        {
+            File.Delete(ScriptEnvironmentFile.PathFor(script, ""));
+        }
+    }
+
+    [Fact]
+    public void The_variables_file_is_named_after_the_script_and_its_arguments()
+    {
+        var a = ScriptEnvironmentFile.PathFor(@"C:\s\a.ps1", "");
+        Assert.Equal(ScriptEnvironmentFile.Folder, Path.GetDirectoryName(a));
+        Assert.EndsWith(Path.Combine("UpsTools", "script-env"), ScriptEnvironmentFile.Folder);
+        Assert.Matches(@"^[0-9a-f]{24}\.json$", Path.GetFileName(a));
+        Assert.Equal(a, ScriptEnvironmentFile.PathFor(@"C:\s\a.ps1", ""));
+        Assert.NotEqual(a, ScriptEnvironmentFile.PathFor(@"C:\s\a.ps1", "-x"));
+        Assert.NotEqual(a, ScriptEnvironmentFile.PathFor(@"C:\s\b.ps1", ""));
+    }
+
     [Fact]
     public async Task A_waited_script_that_exits_0_succeeds()
     {
-        var result = await _runner.RunAsync(Action(Ps1("ok.ps1"), arguments: "one \"two words\""), "Grid lost", CancellationToken.None);
+        var result = await _runner.RunAsync(Action(Ps1("ok.ps1"), arguments: "one \"two words\""), "Grid lost", ScriptEnvironment.None, CancellationToken.None);
 
         Assert.True(result.Ok);
         Assert.Equal($"{_folder.Path}|one,two words", Output("ok.ps1"));
@@ -50,7 +149,7 @@ public sealed class ScriptRunnerTests : IDisposable
     [InlineData(ScriptRunner.CouldNotStartExitCode, "it couldn't be started")]
     public async Task A_waited_script_that_fails_says_how(int exitCode, string problem)
     {
-        var result = await _runner.RunAsync(Action(Ps1("fail.ps1", exitCode)), "Grid lost", CancellationToken.None);
+        var result = await _runner.RunAsync(Action(Ps1("fail.ps1", exitCode)), "Grid lost", ScriptEnvironment.None, CancellationToken.None);
 
         Assert.Equal(StepResult.Failure(problem), result);
         Assert.Equal($"Grid lost: fail.ps1 failed: {problem}", _log.Recent[^1].Message);
@@ -61,7 +160,7 @@ public sealed class ScriptRunnerTests : IDisposable
     public async Task A_script_not_waited_for_succeeds_once_started()
     {
         var watch = Stopwatch.StartNew();
-        var result = await _runner.RunAsync(Action(Ps1("slow.ps1", exitCode: 1, sleepMs: 3000), wait: false), "Manual run", CancellationToken.None);
+        var result = await _runner.RunAsync(Action(Ps1("slow.ps1", exitCode: 1, sleepMs: 3000), wait: false), "Manual run", ScriptEnvironment.None, CancellationToken.None);
 
         Assert.True(result.Ok);
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2.5));
@@ -73,7 +172,7 @@ public sealed class ScriptRunnerTests : IDisposable
     public async Task Cancelling_stops_the_wait_not_the_script()
     {
         using var cancel = new CancellationTokenSource();
-        var run = _runner.RunAsync(Action(Ps1("long.ps1", sleepMs: 2000)), "Grid lost", cancel.Token);
+        var run = _runner.RunAsync(Action(Ps1("long.ps1", sleepMs: 2000)), "Grid lost", ScriptEnvironment.None, cancel.Token);
         await Wait.Until(() => _log.Recent.Count == 1);
 
         cancel.Cancel();
@@ -85,7 +184,7 @@ public sealed class ScriptRunnerTests : IDisposable
     public async Task A_missing_script_fails_without_starting()
     {
         var path = Path.Combine(_folder.Path, "gone.bat");
-        var result = await _runner.RunAsync(Action(path), "Grid lost", CancellationToken.None);
+        var result = await _runner.RunAsync(Action(path), "Grid lost", ScriptEnvironment.None, CancellationToken.None);
 
         Assert.Equal(StepResult.Failure("file not found"), result);
         Assert.Equal($"Grid lost: script not found: {path}", Assert.Single(_log.Recent).Message);
@@ -95,7 +194,7 @@ public sealed class ScriptRunnerTests : IDisposable
     public async Task A_file_that_cannot_be_started_fails()
     {
         var bogus = _folder.File("bogus.exe", "not a program");
-        var result = await _runner.RunAsync(Action(bogus, wait: false), "Grid lost", CancellationToken.None);
+        var result = await _runner.RunAsync(Action(bogus, wait: false), "Grid lost", ScriptEnvironment.None, CancellationToken.None);
 
         Assert.False(result.Ok);
         Assert.StartsWith("couldn't start: ", result.Problem);
@@ -107,7 +206,7 @@ public sealed class ScriptRunnerTests : IDisposable
     {
         var cmd = _folder.File("four.cmd", "@echo %~1>\"%~dp0four.cmd.out\"\r\n@exit /b 4\r\n");
 
-        var result = await _runner.RunAsync(Action(cmd, arguments: "hello"), "Grid lost", CancellationToken.None);
+        var result = await _runner.RunAsync(Action(cmd, arguments: "hello"), "Grid lost", ScriptEnvironment.None, CancellationToken.None);
 
         Assert.Equal(StepResult.Failure("exit code 4"), result);
         Assert.Equal("hello", Output("four.cmd"));
@@ -119,7 +218,7 @@ public sealed class ScriptRunnerTests : IDisposable
         var action = Action(Ps1("admin.ps1"));
         action.RunElevated = true;
 
-        var result = await _runner.RunAsync(action, "Grid lost", CancellationToken.None);
+        var result = await _runner.RunAsync(action, "Grid lost", ScriptEnvironment.None, CancellationToken.None);
 
         Assert.Equal(StepResult.Failure("its administrator task is missing"), result);
         Assert.Equal("Grid lost: didn't run admin.ps1: its administrator task is missing. Open Scripts and click Repair.",

@@ -13,7 +13,7 @@ public sealed class AppController
     private readonly Dispatcher _ui;
     private readonly SettingsStore _store;
     private readonly UpsDrivers _drivers;
-    private readonly Func<ScriptAction, string, CancellationToken, Task<StepResult>> _runScript;
+    private readonly Func<ScriptAction, string, IReadOnlyDictionary<string, string?>, CancellationToken, Task<StepResult>> _runScript;
     private readonly PowerRunner _power;
     private UpsMonitor? _monitor;
     private ITray? _tray;
@@ -35,7 +35,7 @@ public sealed class AppController
     /// </param>
     /// <param name="countdown">The countdown before a power action: <see cref="CountdownWindow"/> unless a test says otherwise.</param>
     internal AppController(Dispatcher ui, AppLog log, IReadOnlyList<IUpsDriver>? drivers = null,
-        Func<ScriptAction, string, CancellationToken, Task<StepResult>>? runScript = null,
+        Func<ScriptAction, string, IReadOnlyDictionary<string, string?>, CancellationToken, Task<StepResult>>? runScript = null,
         IPowerControl? power = null, PowerCountdown? countdown = null)
     {
         _ui = ui;
@@ -175,11 +175,22 @@ public sealed class AppController
 
     /// <summary>"Run now" on an event: its enabled scripts, as if the event had fired, without the notification.</summary>
     public void RunScripts(EventScriptsViewModel group, string reason) =>
-        StartChain(group.Kind, group.EnabledActions.ToList(), reason, finished: (c, _) => NotifyProblems(c, "Manual run"));
+        StartChain(group.Kind, group.EnabledActions.ToList(), reason, Variables(group.Kind, manual: true),
+            finished: (c, _) => NotifyProblems(c, "Manual run"));
 
     /// <summary>"Run now" on one script.</summary>
-    public void RunScript(ScriptAction action, string reason) =>
-        StartChain(null, [action], reason, finished: (c, _) => NotifyProblems(c, "Manual run"));
+    public void RunScript(ScriptAction action, string reason)
+    {
+        var kind = EventScripts.FirstOrDefault(g => g.Items.Any(i => i.Model == action))?.Kind;
+        StartChain(null, [action], reason, Variables(kind, manual: true), finished: (c, _) => NotifyProblems(c, "Manual run"));
+    }
+
+    /// <summary>What the scripts of <paramref name="kind"/> are told about the UPS (<see cref="ScriptEnvironment"/>).</summary>
+    private IReadOnlyDictionary<string, string?> Variables(UpsEventKind? kind, bool manual, UpsStatus? status = null,
+        TimeSpan? outage = null) =>
+        ScriptEnvironment.For(kind, status ?? _monitor?.LastStatus,
+            reachable: _monitor is null ? null : _monitor.LinkState != UpsLinkState.Unreachable && kind != UpsEventKind.UpsUnreachable,
+            outage ?? (_gridLostAt is { } lost ? (status?.Timestamp ?? DateTimeOffset.Now) - lost : null), manual);
 
     /// <summary>
     /// Starts <paramref name="actions"/> in order (see <see cref="ScriptChain"/>) and returns the chain as it
@@ -188,7 +199,7 @@ public sealed class AppController
     /// </summary>
     /// <param name="finished">Called when the chain is done; the flag says whether it had to wait for a script.</param>
     private ScriptChain StartChain(UpsEventKind? kind, IReadOnlyList<ScriptAction> actions, string reason,
-        Action<ScriptChain, bool> finished)
+        IReadOnlyDictionary<string, string?> environment, Action<ScriptChain, bool> finished)
     {
         if (actions.Count == 0) Log.Info($"{reason}: no scripts to run");
         if (kind is { } k) StopChain(k, $"{reason} started again");
@@ -198,7 +209,8 @@ public sealed class AppController
         var cancel = new CancellationTokenSource();
         if (kind is { } key) _chains[key] = (chain, cancel);
 
-        var run = chain.RunAsync((i, _, ct) => actions[i].Power is null ? _runScript(actions[i], reason, ct) : _power.RunAsync(actions[i], reason, ct),
+        var run = chain.RunAsync((i, _, ct) =>
+                actions[i].Power is null ? _runScript(actions[i], reason, environment, ct) : _power.RunAsync(actions[i], reason, ct),
             cancel.Token);
         _ = FinishAsync();
         return chain;
@@ -279,6 +291,7 @@ public sealed class AppController
 
         var notify = Settings.NotifyOn(kind);
         var chain = StartChain(kind, EventScripts.First(g => g.Kind == kind).EnabledActions.ToList(), kind.Title(),
+            Variables(kind, manual: false, status, outage),
             // Problems found before the notification below went out are in it already.
             finished: (c, waited) => { if (waited && notify) NotifyProblems(c, kind.Title()); });
 

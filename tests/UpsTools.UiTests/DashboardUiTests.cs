@@ -76,6 +76,28 @@ public sealed class DashboardUiTests : IDisposable
     }
 
     [Fact]
+    public void Scripts_are_told_the_event_and_the_ups_state()
+    {
+        var script = _app.WriteFile("env.ps1", """
+            Add-Content -LiteralPath "$PSCommandPath.out" -Value "$env:UPS_EVENT|$env:UPS_GRID|$env:UPS_BATTERY_PERCENT|$env:UPS_LOAD_W|$env:UPS_MODEL|$env:UPS_SERIAL|$env:UPS_MANUAL"
+            """);
+        _app.Seed(s => s["Scripts"]!["GridLost"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["Path"] = script }));
+        var window = _app.Start()!;
+        window.HasText("GridValue", "Online");
+
+        _app.Simulate(new { GridPresent = false, BatteryPercent = 77, AcInputW = 0, AcOutputW = 95.4 });
+
+        var output = script + ".out";
+        Ui.Until(() => File.Exists(output), "the script");
+        Assert.Equal("GridLost|0|77|95|Simulator|SIM0001|", File.ReadAllLines(output)[0]);
+
+        _app.Tab("Scripts").ByName("Run the Grid lost scripts now").InvokeAsync();
+        Ui.Answer(_app.Pid, "Yes");
+        Ui.Until(() => File.ReadAllLines(output).Length == 2, "the manual run");
+        Assert.Equal("GridLost|0|77|95|Simulator|SIM0001|1", File.ReadAllLines(output)[1]);
+    }
+
+    [Fact]
     public void A_low_battery_runs_the_battery_low_scripts_once_per_outage()
     {
         var low = _app.Script("low.ps1");

@@ -32,6 +32,7 @@ internal static class Uninstaller
         {
             if (StartupRegistration.RemoveIfThisExe()) log.Info("Removed the Start with Windows entry");
         }, ref failed);
+        Try(log, "the scripts' environment files", ScriptEnvironmentFile.DeleteAll, ref failed);
         Try(log, "the notification registration", () => Notifier.Unregister(log), ref failed);
 
         var problem = await new ElevatedTasks(log).RemoveOwnTasksAsync();
