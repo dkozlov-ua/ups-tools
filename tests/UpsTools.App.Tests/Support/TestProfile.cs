@@ -42,6 +42,13 @@ internal static class TestProfile
         }
         catch { }
         try { TaskFolder.Delete(); } catch { }
+        try
+        {
+            // Shared by every profile: the tests delete their own files, then the folder once it is empty.
+            if (Directory.Exists(ScriptEnvironmentFile.Folder) && !Directory.EnumerateFileSystemEntries(ScriptEnvironmentFile.Folder).Any())
+                Directory.Delete(ScriptEnvironmentFile.Folder);
+        }
+        catch { }
     }
 
     private static void TryDelete(string folder)

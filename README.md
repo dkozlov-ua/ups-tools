@@ -21,6 +21,8 @@ the NAS when the grid comes back.
   - When the grid comes back, the *Grid lost* and *Battery low* scripts that haven't started yet are skipped, e.g.
     *Grid lost* → `wait 5 minutes` (waited for) → `hibernate` doesn't hibernate the PC after a 2-minute outage, and a
     countdown still running closes. When the UPS answers again, the same goes for the *UPS unreachable* scripts.
+- **Script variables**: scripts get the event and the UPS's state in environment variables (see
+  [Environment variables](#environment-variables)), so one script can serve several events or pass the state on.
 - **Notifications**: a Windows notification for each event, e.g. *Grid lost — running on battery: Battery 87 % ·
   about 6 h 10 m left at 120 W*, naming the scripts it started. *Grid restored* says how long the outage lasted and
   replaces the *Grid lost* or *Battery low* notification; *UPS reachable again* replaces *UPS unreachable*. Clicking one
@@ -81,6 +83,29 @@ signed, so SmartScreen may ask you to confirm (*More info* → *Run anyway*). Se
 - `UpsTools.exe --uninstall` exits a running copy and removes what the app created outside its folder (used by the
   uninstaller; see [RELEASE.md](RELEASE.md#what-the-setup-does)).
 - Set the environment variable `UPSTOOLS_TRACE=1` to log the Bluetooth protocol exchange for troubleshooting.
+
+### Environment variables
+
+Every script gets these, with the UPS's state when the event fired (for *Run now*, its latest reading). One the UPS
+doesn't report, or that doesn't apply, isn't set.
+
+| Variable | Value |
+|---|---|
+| `UPS_EVENT` | `GridLost`, `BatteryLow`, `GridRestored`, `UpsUnreachable` or `UpsReachable` |
+| `UPS_MANUAL` | `1` when started by *Run now* |
+| `UPS_GRID` | `1` with mains power at the UPS input, `0` on battery |
+| `UPS_REACHABLE` | `1` while the UPS answers, `0` when it is unreachable (the readings are then its last ones) |
+| `UPS_BATTERY_PERCENT` | Charge, e.g. `87` |
+| `UPS_RUNTIME_MINUTES` | Estimated minutes left on battery at the current load |
+| `UPS_LOAD_W` | Output power in watts |
+| `UPS_OUTAGE_SECONDS` | For *Grid restored*, how long the outage lasted; on battery, how long it has lasted so far |
+| `UPS_MODEL`, `UPS_SERIAL` | The UPS |
+| `UPS_READING_TIME` | When the readings were taken, e.g. `2026-11-05T21:30:05+02:00` |
+
+E.g. in a `.ps1`: `if ([int]$env:UPS_BATTERY_PERCENT -lt 30) { ... }`; in a `.bat`: `echo %UPS_EVENT% >> ups.log`.
+
+Scripts that run as administrator get them too: just before starting the task, UPS Tools writes them to
+`%LOCALAPPDATA%\UpsTools\script-env`, where the task picks them up (a file older than 2 minutes is ignored).
 
 ### Scripts that run as administrator
 

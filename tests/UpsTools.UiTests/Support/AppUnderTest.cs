@@ -69,6 +69,12 @@ internal sealed class AppUnderTest : IDisposable
     public Process? Process { get; private set; }
     public int Pid => Process!.Id;
 
+    private readonly DateTime _startedUtc = DateTime.UtcNow;
+
+    /// <summary>Where the app leaves the environment variables of scripts that run as administrator (shared by every profile).</summary>
+    private static string ScriptEnvironmentFolder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UpsTools", "script-env");
+
     public AppUnderTest()
     {
         Work = Path.Combine(Path.GetTempPath(), "UpsTools.UiTests", Profile);
@@ -215,6 +221,16 @@ internal sealed class AppUnderTest : IDisposable
         catch { }
         try { Windows.UI.Notifications.ToastNotificationManager.History.Clear(AppUserModelId); } catch { }
         DeleteTaskFolder();
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(ScriptEnvironmentFolder))
+                if (File.GetLastWriteTimeUtc(file) >= _startedUtc) File.Delete(file);
+            if (!Directory.EnumerateFileSystemEntries(ScriptEnvironmentFolder).Any()) Directory.Delete(ScriptEnvironmentFolder);
+        }
+        catch
+        {
+            // none
+        }
     }
 
     private static void TryDelete(string folder)
