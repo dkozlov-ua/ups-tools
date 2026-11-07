@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using UpsTools.Core.Ble;
 using UpsTools.Core.Bluetti;
 
 namespace UpsTools.Tests.Support;
@@ -59,7 +60,7 @@ internal sealed class FakeBluettiDevice
 
     public IReadOnlyCollection<string> Log => _log;
 
-    public BluettiLinkFactory Factory => _ =>
+    public BleLinkFactory Factory => _ =>
     {
         Connections++;
         if (ConnectFailures > 0)
@@ -69,7 +70,7 @@ internal sealed class FakeBluettiDevice
         }
         var link = new Link(this);
         Links.Add(link);
-        return Task.FromResult<IBluettiLink>(link);
+        return Task.FromResult<IBleLink>(link);
     };
 
     /// <summary>Loads register blocks as read from a device (big-endian, 2 bytes per register).</summary>
@@ -89,7 +90,7 @@ internal sealed class FakeBluettiDevice
 
     private static byte[] PublicPoint(ECParameters p) => [.. p.Q.X!, .. p.Q.Y!];
 
-    public sealed class Link(FakeBluettiDevice device) : IBluettiLink
+    public sealed class Link(FakeBluettiDevice device) : IBleLink
     {
         private byte[]? _tempKey;
         private byte[]? _tempIv;

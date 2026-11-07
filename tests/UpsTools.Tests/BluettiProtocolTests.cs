@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using UpsTools.Core.Ble;
 using UpsTools.Core.Bluetti;
 using UpsTools.Tests.Support;
 using static UpsTools.Tests.Support.TestData;

@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using UpsTools.Core;
+using UpsTools.Core.EcoFlow;
 using UpsTools.Services;
 
 namespace UpsTools.Views;
@@ -12,17 +14,21 @@ public partial class PairWindow : Window
 {
     private static readonly TimeSpan ScanDuration = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan SignInTimeout = TimeSpan.FromSeconds(20);
+    private static readonly HttpClient Http = new();
 
     private readonly IReadOnlyList<IUpsDriver> _drivers;
     private readonly AppLog _log;
     private readonly ObservableCollection<DiscoveredUps> _found = [];
     private CancellationTokenSource? _work;
 
-    public PairWindow(IReadOnlyList<IUpsDriver> drivers, AppLog log)
+    /// <param name="userId">The user ID the paired UPS uses, if any: the account panel starts with it.</param>
+    public PairWindow(IReadOnlyList<IUpsDriver> drivers, AppLog log, string? userId = null)
     {
         InitializeComponent();
         _drivers = drivers;
         _log = log;
+        UserIdBox.Text = userId ?? "";
         DeviceList.ItemsSource = _found;
         Loaded += async (_, _) => await ScanAsync();
         Closed += (_, _) => _work?.Cancel();
@@ -84,7 +90,14 @@ public partial class PairWindow : Window
     {
         if (DeviceList.SelectedItem is not DiscoveredUps selected) return;
         var driver = _drivers.First(d => d.Id == selected.DriverId);
-        var candidate = new PairedUps(selected.DriverId, selected.Address, selected.Name, selected.Model);
+        var userId = driver.RequiresUserId ? UserIdBox.Text.Trim() : null;
+        if (userId == "")
+        {
+            SetState(Mode.Idle, "Enter the EcoFlow user ID, or sign in to look it up.", error: true);
+            UserIdBox.Focus();
+            return;
+        }
+        var candidate = new PairedUps(selected.DriverId, selected.Address, selected.Name, selected.Model, userId);
 
         var work = StartWork(ConnectTimeout); // also stops a running scan
         SetState(Mode.Connecting, $"Connecting to {selected.Name}…");
@@ -108,11 +121,36 @@ public partial class PairWindow : Window
         }
     }
 
+    private async Task SignInAsync()
+    {
+        if (EmailBox.Text.Trim() == "" || PasswordBox.Password == "")
+        {
+            SetState(Mode.Idle, "Enter the email address and password of your EcoFlow account.", error: true);
+            return;
+        }
+
+        var work = StartWork(SignInTimeout); // also stops a running scan
+        SetState(Mode.SigningIn, "Signing in to EcoFlow…");
+        try
+        {
+            UserIdBox.Text = await EcoFlowAccount.GetUserIdAsync(Http, EmailBox.Text, PasswordBox.Password, work.Token);
+            PasswordBox.Clear();
+            _log.Info("Looked up the EcoFlow user ID");
+            SetState(Mode.Idle, "Found your user ID. Click Pair to connect.");
+        }
+        catch (Exception ex)
+        {
+            var message = ex is OperationCanceledException ? "EcoFlow did not answer in time" : ex.Message;
+            SetState(Mode.Idle, message, error: true);
+        }
+    }
+
     private enum Mode
     {
         Idle,
         Scanning,
         Connecting,
+        SigningIn,
     }
 
     private Mode _mode;
@@ -124,12 +162,28 @@ public partial class PairWindow : Window
         StatusText.Text = status;
         StatusText.SetResourceReference(TextBlock.ForegroundProperty, error ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
         ScanButton.IsEnabled = mode == Mode.Idle;
-        DeviceList.IsEnabled = mode != Mode.Connecting;
+        DeviceList.IsEnabled = mode is not (Mode.Connecting or Mode.SigningIn);
+        AccountPanel.IsEnabled = mode is not (Mode.Connecting or Mode.SigningIn);
         UpdatePairButton();
     }
 
     // Pairing is allowed while a scan is still running; it stops the scan.
-    private void UpdatePairButton() => PairButton.IsEnabled = DeviceList.SelectedItem is not null && _mode != Mode.Connecting;
+    private void UpdatePairButton()
+    {
+        PairButton.IsEnabled = DeviceList.SelectedItem is not null && _mode is not (Mode.Connecting or Mode.SigningIn);
+        var driver = DeviceList.SelectedItem is DiscoveredUps selected ? _drivers.FirstOrDefault(d => d.Id == selected.DriverId) : null;
+        AccountPanel.Visibility = driver?.RequiresUserId == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void SignIn_Click(object sender, RoutedEventArgs e) => await SignInAsync();
+
+    // Enter after the password looks the user ID up rather than pairing.
+    private async void PasswordBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        await SignInAsync();
+    }
 
     private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanAsync();
 

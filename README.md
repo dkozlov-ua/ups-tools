@@ -63,13 +63,24 @@ stops the *Battery low* scripts as usual.
 |---|---|---|
 | Bluetti Elite 100 V2 (EL100V2) | Bluetooth LE (encrypted) | Tested |
 | Bluetti AC60/AC60P, AC70/AC70P, AC180/AC180P/AC180T, AC2A/AC2P, AP300, EL10, EL30V2, PR30V2, PR100V2, Handsfree 1/2 | Bluetooth LE | Same register layout, untested |
+| EcoFlow River 3 Plus, with or without its Smart Extra Battery | Bluetooth LE (encrypted, EcoFlow account) | Tested |
+| EcoFlow River 3, River 3 UPS, River 3 Plus (270), River 3 Plus Wireless | Bluetooth LE (encrypted, EcoFlow account) | Same messages, untested |
 
 Bluetti doesn't publish its protocol. The Bluetooth protocol and the "V2" channel encryption are ported from the community
 reverse-engineering in [bluetti-bt-lib](https://github.com/Patrick762/bluetti-bt-lib) (MIT). Bluetti's official license
 file is not needed.
 
-The UPS accepts a single Bluetooth connection: while UPS Tools is connected, the Bluetti phone app can only reach the UPS
-over Wi-Fi.
+Neither does EcoFlow. Its Bluetooth protocol (the secp160r1 key exchange, the session key table, the packet format and the
+River 3 messages) is ported from [ha-ef-ble](https://github.com/rabits/ha-ef-ble) (Apache License 2.0). An EcoFlow device
+only talks to the EcoFlow account it was added to in the EcoFlow app, so pairing one asks for that account's user ID: enter
+it, or let Find UPS look it up by signing in to EcoFlow with the account's email and password. Only the user ID is saved
+(in `settings.json`); the password is sent to EcoFlow (`api.ecoflow.com`) and nowhere else. The River 3 Plus doesn't
+report how much energy it holds, so the time left is worked out from its model's capacity (286 Wh), plus 286 Wh for a
+Smart Extra Battery when one is plugged in; it doesn't report its input voltage either, so the grid counts as present
+while its AC input is plugged in.
+
+The UPS accepts a single Bluetooth connection: while UPS Tools is connected, the phone app can only reach the UPS over
+Wi-Fi.
 
 ## Requirements
 
@@ -85,7 +96,8 @@ signed, so SmartScreen may ask you to confirm (*More info* → *Run anyway*). Se
 
 ## Usage
 
-- Configuration → **Find UPS…** → select your UPS → **Pair**.
+- Configuration → **Find UPS…** → select your UPS → **Pair**. For an EcoFlow UPS, enter the user ID of its EcoFlow
+  account first, or the account's email and password and **Look up user ID**.
 - Settings and the log are in `%APPDATA%\UpsTools` (`settings.json`, `ups-tools.log`).
 - Notifications are registered as *UPS Tools* (`HKCU\Software\Classes\AppUserModelId\DKozlov.UpsTools`); their images
   are in `%LOCALAPPDATA%\UpsTools`. Windows' own settings (Do not disturb, the per-app switch) decide whether they pop up.
@@ -149,9 +161,9 @@ dotnet run --project src/UpsTools
 
 | Path | Contents |
 |---|---|
-| `src/UpsTools.Core` | Device-independent model (`UpsStatus`, `UpsMonitor`, `UpsStateTracker`, `IUpsDriver`), the Bluetti BLE driver and the simulated UPS |
+| `src/UpsTools.Core` | Device-independent model (`UpsStatus`, `UpsMonitor`, `UpsStateTracker`, `IUpsDriver`), the shared Bluetooth LE link (`Ble`), the Bluetti and EcoFlow BLE drivers and the simulated UPS |
 | `src/UpsTools` | WPF app (Fluent theme, tray icon, settings, script runner) |
-| `tests/UpsTools.Tests` | Core: the Bluetti protocol against reference vectors, a real Elite 100 V2 register dump and a simulated device (handshake, fragmented notifications, dropped links, stalls); the monitor, events, script chains, notification texts |
+| `tests/UpsTools.Tests` | Core: the Bluetti protocol against reference vectors, a real Elite 100 V2 register dump and a simulated device (handshake, fragmented notifications, dropped links, stalls); the EcoFlow protocol against ha-ef-ble's algorithms, real River 3 packets and a simulated device (key exchange, authentication, uploads in parts, silence, reconnects); the monitor, events, script chains, notification texts |
 | `tests/UpsTools.App.Tests` | App: settings, log, Start with Windows, notifications, scripts (real processes), administrator tasks (real Task Scheduler), the uninstaller, tray art, view models, and the controller with a scripted UPS |
 | `tests/UpsTools.UiTests` | End to end: starts `UpsTools.exe` with a simulated UPS and uses it through UI Automation and real mouse and keyboard input |
 | `tools/make-icon.cs` | Regenerates `app.ico`: `dotnet run tools/make-icon.cs` |

@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using UpsTools.Core.Ble;
 
 namespace UpsTools.Core.Bluetti;
 
@@ -12,13 +13,13 @@ namespace UpsTools.Core.Bluetti;
 internal sealed class BluettiConnection(
     BluettiModel model,
     string address,
-    BluettiLinkFactory connect,
+    BleLinkFactory connect,
     Action<string>? log = null,
     BluettiTimings? timings = null,
     byte[]? deviceSigningKey = null) : IUpsConnection
 {
     /// <summary>Verbose protocol tracing for diagnostics; enable with the environment variable UPSTOOLS_TRACE=1.</summary>
-    internal static readonly bool TraceEnabled = Environment.GetEnvironmentVariable("UPSTOOLS_TRACE") == "1";
+    internal static bool TraceEnabled => BleTrace.Enabled;
 
     private readonly BluettiTimings _timings = timings ?? BluettiTimings.Default;
     private readonly SemaphoreSlim _io = new(1, 1);
@@ -26,7 +27,7 @@ internal sealed class BluettiConnection(
     private readonly List<byte> _encrypted = [];
     private readonly List<byte> _response = [];
 
-    private IBluettiLink? _link;
+    private IBleLink? _link;
     private Channel<byte[]>? _inbox;
     private Task? _inboxPump;
     private TaskCompletionSource? _challengeSeen;
@@ -318,4 +319,23 @@ internal sealed class BluettiConnection(
         _crypto.Dispose();
         _io.Dispose();
     }
+}
+
+/// <summary>How long <see cref="BluettiConnection"/> waits for each step.</summary>
+internal sealed record BluettiTimings(
+    TimeSpan ChallengeWait,
+    TimeSpan Handshake,
+    TimeSpan Response,
+    TimeSpan Write,
+    TimeSpan Retry,
+    TimeSpan Unsubscribe)
+{
+    public static BluettiTimings Default { get; } = new(
+        // Encrypted devices send their challenge right after notifications are enabled.
+        ChallengeWait: TimeSpan.FromSeconds(4),
+        Handshake: TimeSpan.FromSeconds(5), // normally ~1.3 s
+        Response: TimeSpan.FromSeconds(5),
+        Write: TimeSpan.FromSeconds(5),
+        Retry: TimeSpan.FromSeconds(1),
+        Unsubscribe: TimeSpan.FromSeconds(2));
 }

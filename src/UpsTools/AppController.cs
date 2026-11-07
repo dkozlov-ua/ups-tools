@@ -260,7 +260,7 @@ public sealed class AppController
         Log.Info("Sent a test notification");
     }
 
-    private string? DeviceTitle => Settings.Ups is { } ups ? $"Bluetti {ups.Model}" : null;
+    private string? DeviceTitle => Settings.Ups?.Title;
 
     /// <summary>What one of <see cref="ScriptAction.WaitLimitMinutes"/> is: a minute, unless a test says otherwise.</summary>
     internal static TimeSpan WaitLimitUnit { get; set; } = TimeSpan.FromMinutes(1);

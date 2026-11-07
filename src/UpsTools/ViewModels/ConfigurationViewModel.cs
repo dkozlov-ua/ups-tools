@@ -96,7 +96,7 @@ public sealed class ConfigurationViewModel : ObservableObject
     {
         PairedUps? ups = _settings.Ups;
         IsPaired = ups is not null;
-        PairedTitle = ups is null ? "No UPS paired" : $"Bluetti {ups.Model}";
+        PairedTitle = ups is null ? "No UPS paired" : ups.Title;
         PairedDetail = ups is null
             ? "Find your UPS to start monitoring it."
             : $"{ups.Name} · {ups.Address} · via Bluetooth LE";

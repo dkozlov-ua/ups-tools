@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using UpsTools.Core.Ble;
 using UpsTools.Core.Bluetti;
 
 namespace UpsTools.Tests;

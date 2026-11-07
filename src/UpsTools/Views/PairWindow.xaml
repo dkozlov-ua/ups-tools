@@ -4,7 +4,7 @@
         xmlns:core="clr-namespace:UpsTools.Core;assembly=UpsTools.Core"
         Title="Find UPS"
         Icon="/Assets/app.ico"
-        Width="560" Height="480" MinWidth="460" MinHeight="380"
+        Width="560" Height="580" MinWidth="460" MinHeight="420"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <Grid Margin="20">
         <Grid.RowDefinitions>
@@ -12,12 +12,13 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <StackPanel>
             <TextBlock Text="Find your UPS" Style="{StaticResource PageTitle}" />
             <TextBlock Style="{StaticResource Detail}" FontSize="13" Margin="0,4,0,12"
-                       Text="Make sure the UPS is switched on, within Bluetooth range, and not connected to the Bluetti phone app over Bluetooth." />
+                       Text="Make sure the UPS is switched on, within Bluetooth range, and not connected to its phone app over Bluetooth." />
         </StackPanel>
 
         <ListView x:Name="DeviceList" Grid.Row="1" SelectionMode="Single" SelectionChanged="DeviceList_SelectionChanged"
@@ -33,7 +34,7 @@
                         <TextBlock FontFamily="{StaticResource IconFont}" FontSize="20" Text="&#xE945;" VerticalAlignment="Center"
                                    Margin="0,0,12,0" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
                         <StackPanel Grid.Column="1">
-                            <TextBlock Text="{Binding Model, StringFormat=Bluetti {0}}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" />
                             <TextBlock Style="{StaticResource Detail}">
                                 <Run Text="{Binding Name, Mode=OneWay}" /> · <Run Text="{Binding Address, Mode=OneWay}" />
                             </TextBlock>
@@ -45,12 +46,39 @@
             </ListView.ItemTemplate>
         </ListView>
 
-        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+        <StackPanel x:Name="AccountPanel" Grid.Row="2" Margin="0,12,0,0" Visibility="Collapsed">
+            <TextBlock Text="EcoFlow account" FontWeight="SemiBold" />
+            <TextBlock Style="{StaticResource Detail}" TextWrapping="Wrap" Margin="0,2,0,8"
+                       Text="EcoFlow devices only talk to the account they're added to in the EcoFlow app. Enter its user ID, or sign in to look it up: only the ID is kept, and the password goes to EcoFlow only." />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="Email" Style="{StaticResource Caption}" Margin="0,0,0,4" />
+                <TextBlock Grid.Column="1" Text="Password" Style="{StaticResource Caption}" Margin="0,0,0,4" />
+                <TextBox x:Name="EmailBox" Grid.Row="1" AutomationProperties.Name="EcoFlow account email" Margin="0,0,8,0" />
+                <PasswordBox x:Name="PasswordBox" Grid.Row="1" Grid.Column="1" AutomationProperties.Name="EcoFlow account password"
+                             Margin="0,0,8,0" KeyDown="PasswordBox_KeyDown" />
+                <Button x:Name="SignInButton" Grid.Row="1" Grid.Column="2" Content="Look up user ID" Click="SignIn_Click" />
+                <TextBlock Grid.Row="2" Text="User ID" Style="{StaticResource Caption}" Margin="0,8,0,4" />
+                <TextBox x:Name="UserIdBox" Grid.Row="3" Grid.ColumnSpan="2" AutomationProperties.Name="EcoFlow user ID" Margin="0,0,8,0" />
+            </Grid>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Margin="0,12,0,0">
             <ProgressBar x:Name="Busy" IsIndeterminate="True" Height="4" Margin="0,0,0,8" />
             <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
         </StackPanel>
 
-        <DockPanel Grid.Row="3" Margin="0,16,0,0" LastChildFill="False">
+        <DockPanel Grid.Row="4" Margin="0,16,0,0" LastChildFill="False">
             <Button x:Name="ScanButton" DockPanel.Dock="Left" Content="Scan again" Click="Scan_Click" />
             <Button DockPanel.Dock="Right" Content="Cancel" IsCancel="True" Margin="8,0,0,0" MinWidth="90" />
             <Button x:Name="PairButton" DockPanel.Dock="Right" Content="Pair" IsDefault="True" IsEnabled="False"

@@ -109,14 +109,36 @@ public class UpsModelTests
     }
 
     [Fact]
-    public void The_registry_has_the_bluetti_driver_unless_the_simulator_is_on()
+    public void The_registry_has_the_bluetti_and_ecoflow_drivers_unless_the_simulator_is_on()
     {
         var drivers = new UpsDrivers();
-        var bluetti = Assert.Single(drivers.All);
-        Assert.Equal(BluettiBleDriver.DriverId, bluetti.Id);
-        Assert.Equal("Bluetti (Bluetooth LE)", bluetti.DisplayName);
-        Assert.Same(bluetti, drivers.Find("bluetti-ble"));
+        Assert.Equal(["bluetti-ble", "ecoflow-ble"], drivers.All.Select(d => d.Id));
+        Assert.Equal(["Bluetti (Bluetooth LE)", "EcoFlow (Bluetooth LE)"], drivers.All.Select(d => d.DisplayName));
+        Assert.Equal([false, true], drivers.All.Select(d => d.RequiresUserId));
+        Assert.Same(drivers.All[1], drivers.Find("ecoflow-ble"));
         Assert.Null(drivers.Find("nope"));
+    }
+
+    [Fact]
+    public void Titles_name_the_brand()
+    {
+        Assert.Equal("Bluetti EL100V2", new PairedUps("bluetti-ble", "A", "N", "EL100V2").Title);
+        Assert.Equal("EcoFlow River 3 Plus", new DiscoveredUps("ecoflow-ble", "A", "R631X", "River 3 Plus", -50).Title);
+        Assert.Equal("Bluetti Simulator", new PairedUps("simulated", "A", "N", "Simulator").Title);
+    }
+
+    [Fact]
+    public void The_user_id_is_saved_only_when_there_is_one()
+    {
+        var bluetti = System.Text.Json.JsonSerializer.Serialize(new PairedUps("bluetti-ble", "A", "N", "EL100V2"));
+        Assert.DoesNotContain("UserId", bluetti);
+        Assert.DoesNotContain("Title", bluetti);
+
+        var ecoflow = new PairedUps("ecoflow-ble", "A", "R631X", "River 3 Plus", "123");
+        var json = System.Text.Json.JsonSerializer.Serialize(ecoflow);
+        Assert.Contains("\"UserId\":\"123\"", json);
+        Assert.Equal(ecoflow, System.Text.Json.JsonSerializer.Deserialize<PairedUps>(json));
+        Assert.Null(System.Text.Json.JsonSerializer.Deserialize<PairedUps>(bluetti)!.UserId);
     }
 
     [Fact]

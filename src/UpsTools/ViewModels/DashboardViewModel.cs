@@ -72,7 +72,7 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        DeviceTitle = $"Bluetti {device.Model}";
+        DeviceTitle = device.Title;
         DeviceSubtitle = serial is null ? device.Address : $"Serial {serial} · {device.Address}";
     }
 

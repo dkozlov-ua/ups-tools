@@ -23,7 +23,7 @@ public partial class ConfigurationView : UserControl
         // The dialog needs the Bluetooth link to itself.
         await controller.StopMonitoringAsync();
 
-        var dialog = new PairWindow(controller.Drivers, controller.Log) { Owner = owner };
+        var dialog = new PairWindow(controller.Drivers, controller.Log, controller.Settings.Ups?.UserId) { Owner = owner };
         if (dialog.ShowDialog() == true && dialog.Result is { } paired)
             controller.Pair(paired);
         else

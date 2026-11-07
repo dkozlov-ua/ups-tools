@@ -8,4 +8,8 @@
     <InternalsVisibleTo Include="UpsTools.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="EcoFlow\EcoFlowKeyData.bin" LogicalName="UpsTools.Core.EcoFlow.EcoFlowKeyData.bin" />
+  </ItemGroup>
+
 </Project>

@@ -2,14 +2,11 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
-namespace UpsTools.Core.Bluetti;
+namespace UpsTools.Core.Ble;
 
-/// <summary>The Bluetooth LE link to a Bluetti device: its two data characteristics, through the WinRT GATT API.</summary>
-internal sealed class GattLink : IBluettiLink
+/// <summary>The Bluetooth LE link to a device: its two data characteristics, through the WinRT GATT API.</summary>
+internal sealed class GattLink : IBleLink
 {
-    private static readonly Guid NotifyUuid = Guid.Parse("0000ff01-0000-1000-8000-00805f9b34fb");
-    private static readonly Guid WriteUuid = Guid.Parse("0000ff02-0000-1000-8000-00805f9b34fb");
-
     private readonly BluetoothLEDevice _device;
     private readonly GattSession _session;
     private readonly List<GattDeviceService> _services;
@@ -37,8 +34,11 @@ internal sealed class GattLink : IBluettiLink
     public event Action<byte[]>? Received;
     public event Action? Disconnected;
 
+    /// <param name="channels">The data channels the device may have; the first one it has is used.</param>
+    /// <param name="brand">Names the device in errors, e.g. "Bluetti".</param>
     /// <param name="trace">Protocol tracing, or null when it is off.</param>
-    public static async Task<IBluettiLink> ConnectAsync(ulong address, Action<string>? trace, CancellationToken ct)
+    public static async Task<IBleLink> ConnectAsync(ulong address, IReadOnlyList<GattChannel> channels, string brand,
+        Action<string>? trace, CancellationToken ct)
     {
         BluetoothLEDevice? device = null;
         GattSession? session = null;
@@ -55,7 +55,7 @@ internal sealed class GattLink : IBluettiLink
                 throw new IOException($"Could not list GATT services ({result.Status})");
             services = [.. result.Services];
 
-            GattCharacteristic? notify = null, write = null;
+            var found = new Dictionary<Guid, GattCharacteristic>();
             var problems = new List<string>();
             foreach (var service in services)
             {
@@ -65,19 +65,16 @@ internal sealed class GattLink : IBluettiLink
                     problems.Add($"{service.Uuid.ToString()[..8]}: {characteristics.Status}");
                     continue;
                 }
-                foreach (var c in characteristics.Characteristics)
-                {
-                    if (c.Uuid == NotifyUuid) notify = c;
-                    else if (c.Uuid == WriteUuid) write = c;
-                }
+                foreach (var c in characteristics.Characteristics) found.TryAdd(c.Uuid, c);
             }
-            if (notify is null || write is null)
+            foreach (var channel in channels)
             {
-                var detail = problems.Count > 0 ? $"; {string.Join(", ", problems)}" : "";
-                throw new IOException($"Bluetti data characteristics not available ({services.Count} services{detail})");
+                if (found.TryGetValue(channel.Notify, out var notify) && found.TryGetValue(channel.Write, out var write))
+                    return new GattLink(device, session, services, notify, write, trace);
             }
 
-            return new GattLink(device, session, services, notify, write, trace);
+            var detail = problems.Count > 0 ? $"; {string.Join(", ", problems)}" : "";
+            throw new IOException($"{brand} data characteristics not available ({services.Count} services{detail})");
         }
         catch
         {

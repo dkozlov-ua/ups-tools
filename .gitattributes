@@ -11,3 +11,5 @@
 *.ico binary
 # The icon preview shown in the README.
 *.png binary
+# The EcoFlow session key table.
+*.bin binary
