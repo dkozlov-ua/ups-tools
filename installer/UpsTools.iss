@@ -67,8 +67,10 @@ Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autoprograms}\UPS Tools"; Filename: "{app}\UpsTools.exe"; Comment: "Watches your UPS and runs scripts when its state changes"
 
 [Run]
-; An update: start it again where it was, in the tray.
-Filename: "{app}\UpsTools.exe"; Parameters: "--background"; Check: WasRunningBefore; Flags: nowait
+; An update: start it again where it was, in the tray - or with its window open when the app's own update button
+; ran this setup (/OPENWINDOW=yes).
+Filename: "{app}\UpsTools.exe"; Parameters: "--background"; Check: WasRunningBefore and not OpenWindowAfter; Flags: nowait
+Filename: "{app}\UpsTools.exe"; Check: WasRunningBefore and OpenWindowAfter; Flags: nowait
 Filename: "{app}\UpsTools.exe"; Description: "Open UPS Tools"; Check: not WasRunningBefore; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
@@ -85,6 +87,11 @@ var
 function WasRunningBefore: Boolean;
 begin
   Result := WasRunning;
+end;
+
+function OpenWindowAfter: Boolean;
+begin
+  Result := CompareText(ExpandConstant('{param:OPENWINDOW|no}'), 'yes') = 0;
 end;
 
 { The exe is framework-dependent: it needs the .NET 10 Desktop Runtime (x64). }

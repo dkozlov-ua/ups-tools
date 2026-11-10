@@ -1,4 +1,3 @@
-using System.Reflection;
 using UpsTools.Core;
 using UpsTools.Services;
 
@@ -12,7 +11,8 @@ public sealed class ConfigurationViewModel : ObservableObject
 
     /// <param name="changed">Saves the settings.</param>
     /// <param name="monitorChanged">Applies a changed setting of the monitor: its period or the events' limits.</param>
-    public ConfigurationViewModel(AppSettings settings, AppLog log, Action changed, Action monitorChanged)
+    /// <param name="updater">Updates from GitHub; the real one unless a test says otherwise.</param>
+    public ConfigurationViewModel(AppSettings settings, AppLog log, Action changed, Action monitorChanged, Updater? updater = null)
     {
         _settings = settings;
         _log = log;
@@ -34,13 +34,16 @@ public sealed class ConfigurationViewModel : ObservableObject
             () => settings.UnreachableOnBatteryMinutes, v => settings.UnreachableOnBatteryMinutes = v);
         StartWithWindows = StartupRegistration.IsEnabled;
         Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new NotificationOption(kind, settings, changed))];
+        Update = new UpdateViewModel(updater ?? new Updater(), log);
         RefreshPairing();
     }
 
     public IReadOnlyList<NotificationOption> Notifications { get; }
 
-    public string Version { get; } = "Version " + (Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "?");
+    public string Version { get; } = "Version " + Updater.CurrentVersionText;
+
+    /// <summary>The update button.</summary>
+    public UpdateViewModel Update { get; }
 
     public string PairedTitle { get; private set => Set(ref field, value); } = "";
     public string PairedDetail { get; private set => Set(ref field, value); } = "";

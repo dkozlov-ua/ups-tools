@@ -57,5 +57,12 @@ public partial class ConfigurationView : UserControl
 
     private void OpenGitHub_Click(object sender, RoutedEventArgs e) => Open(ProjectUrl);
 
+    private async void Update_Click(object sender, RoutedEventArgs e) => await Controller.Configuration.Update.ActAsync();
+
+    private void WhatsNew_Click(object sender, RoutedEventArgs e)
+    {
+        if (Controller.Configuration.Update.ReleasePage is { Length: > 0 } page) Open(page);
+    }
+
     private static void Open(string target) => Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
 }

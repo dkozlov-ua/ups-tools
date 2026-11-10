@@ -32,6 +32,8 @@ the NAS when the grid comes back.
   opens the app.
 - **Configuration**: pair the UPS, close to tray, start with Windows, UPS update period, how long the grid must be gone
   before *Grid lost*, the *Battery low* limits, which events notify.
+- **Updates**: Configuration → About → **Check for updates** looks for a newer release here; **Update to X.Y.Z** downloads
+  its setup, checks it against the SHA-256 GitHub lists for it and runs it, which updates the app and opens it again.
 
 | Event | Fires when |
 |---|---|
@@ -91,7 +93,7 @@ Wi-Fi.
 
 Download `UpsTools-X.Y.Z-setup.exe` from [Releases](https://github.com/dkozlov-ua/ups-tools/releases) and run it. It
 installs into `%LOCALAPPDATA%\Programs\UpsTools` without administrator rights, with a *UPS Tools* Start menu shortcut.
-Running a newer setup updates that folder in place; uninstall it from Settings → Apps → *Installed apps*. The setup isn't
+Running a newer setup, or **Update** in the app, updates that folder in place; uninstall it from Settings → Apps → *Installed apps*. The setup isn't
 signed, so SmartScreen may ask you to confirm (*More info* → *Run anyway*). See [RELEASE.md](RELEASE.md).
 
 ## Usage
