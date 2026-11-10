@@ -268,9 +268,26 @@ public sealed class AppController
     /// <summary>The running monitor, if any (for the tests).</summary>
     internal UpsMonitor? Monitor => _monitor;
 
+    /// <summary>The PC is about to sleep: close the link now, waiting a few seconds at most (Windows won't wait longer).</summary>
+    public void OnGoingToSleep()
+    {
+        if (_monitor is not { } monitor) return;
+        Log.Info("PC is going to sleep; disconnecting from the UPS");
+        try
+        {
+            // Off this thread, so the wait can't hold up the continuations it waits for.
+            if (!Task.Run(monitor.NotifySuspendingAsync).Wait(TimeSpan.FromSeconds(3)))
+                Log.Info("The UPS link did not close in time before sleep");
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Closing the UPS link before sleep failed: {ex.GetBaseException().Message}");
+        }
+    }
+
     public void OnResumedFromSleep()
     {
-        Log.Info("PC resumed from sleep; reconnecting to the UPS");
+        Log.Info($"PC resumed from sleep; reconnecting to the UPS in {UpsMonitor.DefaultResumeSettle.TotalSeconds:0} s");
         _monitor?.NotifyResumed();
     }
 

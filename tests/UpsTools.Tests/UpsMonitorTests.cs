@@ -64,9 +64,9 @@ public class UpsMonitorTests
 
     private DateTimeOffset _now = DateTimeOffset.Now;
 
-    private UpsMonitor Start(TimeSpan? period = null, TimeSpan? readTimeout = null)
+    private UpsMonitor Start(TimeSpan? period = null, TimeSpan? readTimeout = null, TimeSpan? resumeSettle = null)
     {
-        var monitor = new UpsMonitor(_ups, period ?? TimeSpan.Zero, readTimeout, () => _now);
+        var monitor = new UpsMonitor(_ups, period ?? TimeSpan.Zero, readTimeout, () => _now, resumeSettle ?? TimeSpan.Zero);
         monitor.StatusUpdated += _statuses.Enqueue;
         monitor.EventRaised += e => _events.Enqueue((e.Kind, e.Status));
         monitor.EventRaised += _raised.Enqueue;
@@ -297,7 +297,63 @@ public class UpsMonitorTests
 
         Assert.Equal(1, _ups.Resets);
         Assert.Empty(_events); // 2 failures, then a fresh streak of 1
-        Assert.Equal(UpsLinkState.Retrying, monitor.LinkState);
+        Assert.Equal(UpsLinkState.Connecting, monitor.LinkState); // not Retrying: the link is new
+    }
+
+    [Fact]
+    public async Task Going_to_sleep_abandons_the_read_in_flight_closes_the_link_and_stops_polling()
+    {
+        await using var monitor = Start(TimeSpan.FromMilliseconds(20));
+        _ups.Answer(true);
+        await Wait.Until(() => _statuses.Count == 1);
+        _ups.Hang();
+        await Wait.Until(() => _ups.Reads == 2);
+
+        await monitor.NotifySuspendingAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, _ups.Resets);
+        _ups.Answer(true);
+        await Task.Delay(200);
+        Assert.Equal(2, _ups.Reads);
+        Assert.Empty(_log); // the abandoned read is not a failure
+        Assert.Equal(UpsLinkState.Online, monitor.LinkState);
+    }
+
+    [Fact]
+    public async Task After_waking_up_it_waits_for_the_bluetooth_adapter_before_reconnecting()
+    {
+        await using var monitor = Start(TimeSpan.FromMilliseconds(20), resumeSettle: TimeSpan.FromMilliseconds(600));
+        _ups.Answer(true);
+        await Wait.Until(() => _statuses.Count == 1);
+        await monitor.NotifySuspendingAsync();
+        var reads = _ups.Reads;
+
+        monitor.NotifyResumed();
+        Assert.Equal(UpsLinkState.Connecting, monitor.LinkState);
+        _ups.Answer(true);
+        await Task.Delay(300);
+        Assert.Equal(reads, _ups.Reads); // still settling
+
+        await Wait.Until(() => _statuses.Count == 2);
+        Assert.Equal(UpsLinkState.Online, monitor.LinkState);
+        Assert.Equal(2, _ups.Resets); // closed for sleep, and again on waking up
+    }
+
+    [Fact]
+    public async Task Waking_up_again_while_settling_restarts_the_wait()
+    {
+        await using var monitor = Start(TimeSpan.FromMilliseconds(20), resumeSettle: TimeSpan.FromMilliseconds(500));
+        _ups.Answer(true);
+        await Wait.Until(() => _statuses.Count == 1);
+
+        monitor.NotifyResumed();
+        await Task.Delay(300);
+        monitor.NotifyResumed();
+        _ups.Answer(true);
+        await Task.Delay(350); // the first wait is over by now, the second is not
+        Assert.Single(_statuses);
+
+        await Wait.Until(() => _statuses.Count == 2);
     }
 
     [Fact]

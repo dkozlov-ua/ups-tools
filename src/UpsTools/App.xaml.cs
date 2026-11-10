@@ -155,7 +155,9 @@ public partial class App : Application
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
-        if (e.Mode == PowerModes.Resume) Dispatcher.InvokeAsync(() => _controller?.OnResumedFromSleep());
+        // Suspend is handled right here, before Windows goes on to sleep; the link has to be closed by then.
+        if (e.Mode == PowerModes.Suspend) _controller?.OnGoingToSleep();
+        else if (e.Mode == PowerModes.Resume) Dispatcher.InvokeAsync(() => _controller?.OnResumedFromSleep());
     }
 
     private async Task ExitAsync()

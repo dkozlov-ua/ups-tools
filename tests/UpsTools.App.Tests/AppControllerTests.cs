@@ -718,9 +718,21 @@ public sealed class AppControllerTests : IDisposable
     public async Task Resuming_from_sleep_reconnects()
     {
         var controller = await Start();
+        await Online();
         await UiThread.Run(controller.OnResumedFromSleep);
         Assert.Equal(1, _ups.Resets);
-        Assert.Contains(_log.Recent, e => e.Message == "PC resumed from sleep; reconnecting to the UPS");
+        Assert.Contains(_log.Recent, e => e.Message == "PC resumed from sleep; reconnecting to the UPS in 15 s");
+        Assert.Equal(LinkStatus.Connecting, await Ui(() => controller.Dashboard.Link));
+    }
+
+    [Fact]
+    public async Task Going_to_sleep_closes_the_link_first()
+    {
+        var controller = await Start();
+        await Online();
+        await UiThread.Run(controller.OnGoingToSleep);
+        Assert.Equal(1, _ups.Resets);
+        Assert.Contains(_log.Recent, e => e.Message == "PC is going to sleep; disconnecting from the UPS");
     }
 
     [Fact]
