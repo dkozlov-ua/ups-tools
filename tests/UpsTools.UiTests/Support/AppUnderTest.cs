@@ -21,6 +21,9 @@ internal sealed class AppUnderTest : IDisposable
     public string Profile { get; } = $"e2e-{Environment.ProcessId}-{Interlocked.Increment(ref _count)}";
     public string Work { get; }
     public string SimulatorFile => Path.Combine(Work, "ups.json");
+
+    /// <summary>A second simulated UPS (00:00:00:00:00:02, SIMULATOR0002): there while this file is.</summary>
+    public string SecondSimulatorFile => Path.Combine(Work, "ups2.json");
     public string SettingsFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "UpsTools-" + Profile);
     public string SettingsFile => Path.Combine(SettingsFolder, "settings.json");
     public string LogFile => Path.Combine(SettingsFolder, "ups-tools.log");
@@ -82,34 +85,65 @@ internal sealed class AppUnderTest : IDisposable
         Simulate(new { GridPresent = true, BatteryPercent = 80, AcInputVoltage = 230.4, AcOutputVoltage = 229.8, AcInputW = 150, AcOutputW = 120 });
     }
 
-    /// <summary>Writes settings.json for the profile: paired with the simulator, polling every 2 s, notifications off.</summary>
-    public void Seed(Action<JsonObject>? edit = null, bool paired = true)
+    /// <summary>
+    /// Writes settings.json for the profile: paired with the simulator (and the second simulated UPS too with
+    /// <paramref name="second"/>), polling every 2 s, notifications off.
+    /// </summary>
+    /// <param name="edit">Edits the (first) UPS's settings, e.g. its "Scripts".</param>
+    /// <param name="app">Edits the app-wide settings, e.g. "CloseToTray".</param>
+    /// <param name="editSecond">Edits the second UPS's settings.</param>
+    public void Seed(Action<JsonObject>? edit = null, bool paired = true, Action<JsonObject>? app = null, bool second = false,
+        Action<JsonObject>? editSecond = null)
     {
-        var settings = new JsonObject
+        static JsonObject Ups(int n) => new()
         {
-            ["Ups"] = paired ? new JsonObject
+            ["Id"] = $"ups{n}",
+            ["Device"] = new JsonObject
             {
-                ["DriverId"] = "simulated", ["Address"] = "00:00:00:00:00:01", ["Name"] = "SIMULATOR0001", ["Model"] = "Simulator",
-            } : null,
-            ["CloseToTray"] = true,
-            ["UpdatePeriodSeconds"] = 2,
+                ["DriverId"] = "simulated", ["Address"] = $"00:00:00:00:00:0{n}", ["Name"] = $"SIMULATOR000{n}", ["Model"] = "Simulator",
+            },
             ["Scripts"] = new JsonObject(),
             ["Notifications"] = new JsonObject
             {
                 ["GridLost"] = false, ["BatteryLow"] = false, ["GridRestored"] = false, ["UpsUnreachable"] = false, ["UpsReachable"] = false,
             },
         };
-        edit?.Invoke(settings);
+
+        var upses = new JsonArray();
+        if (paired)
+        {
+            var first = Ups(1);
+            edit?.Invoke(first);
+            upses.Add(first);
+        }
+        if (second)
+        {
+            var other = Ups(2);
+            editSecond?.Invoke(other);
+            upses.Add(other);
+        }
+        var settings = new JsonObject
+        {
+            ["Upses"] = upses,
+            ["CloseToTray"] = true,
+            ["UpdatePeriodSeconds"] = 2,
+        };
+        app?.Invoke(settings);
         Directory.CreateDirectory(SettingsFolder);
         File.WriteAllText(SettingsFile, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     /// <summary>What the simulated UPS reports from its next poll on.</summary>
-    public void Simulate(object reading)
+    public void Simulate(object reading) => Simulate(SimulatorFile, reading);
+
+    /// <summary>What the second simulated UPS reports from its next poll on (it exists from now on).</summary>
+    public void SimulateSecond(object reading) => Simulate(SecondSimulatorFile, reading);
+
+    private static void Simulate(string file, object reading)
     {
-        var temp = SimulatorFile + ".tmp";
+        var temp = file + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(reading));
-        File.Move(temp, SimulatorFile, overwrite: true);
+        File.Move(temp, file, overwrite: true);
     }
 
     /// <summary>A PowerShell script that appends a line to &lt;name&gt;.out each time it runs.</summary>
@@ -137,6 +171,12 @@ internal sealed class AppUnderTest : IDisposable
         catch (IOException) { return null; } // being replaced
     }, "settings.json")!;
 
+    /// <summary>The saved settings of a UPS, by its place in the list.</summary>
+    public JsonNode Ups(int index = 0) => Settings()["Upses"]![index]!;
+
+    /// <summary>How many UPSes are saved.</summary>
+    public int UpsCount() => Settings()["Upses"]!.AsArray().Count;
+
     public string Log() => File.Exists(LogFile) ? ReadShared(LogFile) : "";
 
     private static string ReadShared(string path)
@@ -150,7 +190,7 @@ internal sealed class AppUnderTest : IDisposable
         var psi = new ProcessStartInfo(Exe) { UseShellExecute = false };
         foreach (var arg in args) psi.ArgumentList.Add(arg);
         psi.Environment["UPSTOOLS_PROFILE"] = Profile;
-        psi.Environment["UPSTOOLS_SIMULATOR"] = SimulatorFile;
+        psi.Environment["UPSTOOLS_SIMULATOR"] = $"{SimulatorFile};{SecondSimulatorFile}";
         return psi;
     }
 

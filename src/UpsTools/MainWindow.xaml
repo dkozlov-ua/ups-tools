@@ -6,15 +6,25 @@
         Icon="/Assets/app.ico"
         Width="980" Height="720" MinWidth="780" MinHeight="580"
         WindowStartupLocation="CenterScreen">
-    <TabControl Margin="12,8,12,0" Padding="0">
-        <TabItem Header="Dashboard">
-            <views:DashboardView DataContext="{Binding Dashboard}" />
-        </TabItem>
-        <TabItem Header="Scripts">
-            <views:ScriptsView />
-        </TabItem>
-        <TabItem Header="Configuration">
-            <views:ConfigurationView />
-        </TabItem>
-    </TabControl>
+    <Grid>
+        <TabControl Margin="12,8,12,0" Padding="0">
+            <TabItem Header="Dashboard">
+                <views:DashboardView />
+            </TabItem>
+            <TabItem Header="Scripts">
+                <views:ScriptsView />
+            </TabItem>
+            <TabItem Header="Configuration">
+                <views:ConfigurationView />
+            </TabItem>
+        </TabControl>
+
+        <!-- With several UPSes: which one the tabs show, next to them. -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,24,0"
+                    Visibility="{Binding HasSeveral, Converter={StaticResource BoolToVisibility}}">
+            <TextBlock Text="UPS" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox ItemsSource="{Binding Upses}" SelectedItem="{Binding Selected}" DisplayMemberPath="Title" MinWidth="200"
+                      AutomationProperties.Name="UPS" AutomationProperties.AutomationId="UpsPicker" />
+        </StackPanel>
+    </Grid>
 </Window>

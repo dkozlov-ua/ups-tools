@@ -3,15 +3,17 @@ using System.Text.Json;
 namespace UpsTools.Core;
 
 /// <summary>
-/// A UPS that exists only as a JSON file, for trying UPS Tools without hardware and for its UI tests.
-/// With the environment variable <c>UPSTOOLS_SIMULATOR</c> set to the file's path, it is the only driver.
+/// UPSes that exist only as JSON files, for trying UPS Tools without hardware and for its UI tests.
+/// With the environment variable <c>UPSTOOLS_SIMULATOR</c> set to a file's path, or to several separated by
+/// <c>;</c> (one UPS each), it is the only driver.
 /// </summary>
 /// <remarks>
 /// Every poll reads the file again, so editing it changes the UPS. The file holds a
 /// <see cref="SimulatedReading"/>, e.g. <c>{"GridPresent": false, "BatteryPercent": 80, "AcOutputW": 120}</c>;
 /// <c>"Fail": "message"</c> makes polls fail. A missing file is a UPS that doesn't answer and can't be found.
+/// The first file's UPS is <see cref="Address"/> and <see cref="DeviceName"/>; the second one's ends in 02, and so on.
 /// </remarks>
-public sealed class SimulatedUpsDriver(string path) : IUpsDriver
+public sealed class SimulatedUpsDriver : IUpsDriver
 {
     public const string EnvironmentVariable = "UPSTOOLS_SIMULATOR";
     public const string DriverId = "simulated";
@@ -21,7 +23,20 @@ public sealed class SimulatedUpsDriver(string path) : IUpsDriver
 
     private static readonly TimeSpan ScanTime = TimeSpan.FromMilliseconds(300);
 
-    public string Path { get; } = path;
+    /// <param name="path">The file of each UPS, separated by <c>;</c>.</param>
+    public SimulatedUpsDriver(string path) =>
+        Paths = path.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>The first UPS's file.</summary>
+    public string Path => Paths[0];
+
+    public IReadOnlyList<string> Paths { get; }
+
+    /// <summary>The address of the UPS of the file at <paramref name="index"/> (from 0).</summary>
+    public static string AddressOf(int index) => $"00:00:00:00:00:{index + 1:X2}";
+
+    public static string NameOf(int index) => $"SIMULATOR{index + 1:0000}";
+
     public string Id => DriverId;
     public string DisplayName => "Simulated UPS";
 
@@ -39,10 +54,16 @@ public sealed class SimulatedUpsDriver(string path) : IUpsDriver
         {
             return;
         }
-        if (File.Exists(Path)) onFound(new DiscoveredUps(DriverId, Address, DeviceName, ModelName, -42));
+        for (var i = 0; i < Paths.Count; i++)
+            if (File.Exists(Paths[i])) onFound(new DiscoveredUps(DriverId, AddressOf(i), NameOf(i), ModelName, -42));
     }
 
-    public IUpsConnection CreateConnection(PairedUps device) => new Connection(Path);
+    /// <summary>A UPS of no file (e.g. one more than <c>UPSTOOLS_SIMULATOR</c> names now) doesn't answer.</summary>
+    public IUpsConnection CreateConnection(PairedUps device)
+    {
+        var index = Enumerable.Range(0, Paths.Count).FirstOrDefault(i => AddressOf(i) == device.Address, -1);
+        return new Connection(index >= 0 ? Paths[index] : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "no-such-simulated-ups.json"));
+    }
 
     /// <summary>What the file says. Null values are readings the UPS doesn't report.</summary>
     public sealed record SimulatedReading

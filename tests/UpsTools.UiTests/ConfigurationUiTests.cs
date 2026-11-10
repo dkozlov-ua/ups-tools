@@ -43,7 +43,7 @@ public sealed class ConfigurationUiTests : IDisposable
         var grid = window.ByName("Grid lost");
         Assert.False(grid.IsChecked());
         grid.SetChecked(true);
-        Ui.Until(() => (bool)_app.Settings()["Notifications"]!["GridLost"]!, "the notification switch to be saved");
+        Ui.Until(() => (bool)_app.Ups()["Notifications"]!["GridLost"]!, "the notification switch to be saved");
 
         var period = window.ByName("UPS update period in seconds");
         period.SetFocus();
@@ -70,12 +70,12 @@ public sealed class ConfigurationUiTests : IDisposable
 
         percent.SetFocus();
         percent.SetValue("150");
-        Ui.Until(() => (int)_app.Settings()["BatteryLowPercent"]! == 99, "the charge limit to be saved, at most 99 %");
+        Ui.Until(() => (int)_app.Ups()["BatteryLowPercent"]! == 99, "the charge limit to be saved, at most 99 %");
         minutes.SetFocus();
         Ui.Until(() => percent.Value() == "99", "the box to show what applies");
 
         minutes.SetValue("0");
-        Ui.Until(() => (int)_app.Settings()["BatteryLowMinutes"]! == 0, "the time limit to be turned off");
+        Ui.Until(() => (int)_app.Ups()["BatteryLowMinutes"]! == 0, "the time limit to be turned off");
     }
 
     [Fact]
@@ -89,13 +89,13 @@ public sealed class ConfigurationUiTests : IDisposable
         Assert.Equal("0", delay.Value());
         delay.SetFocus();
         delay.SetValue("90");
-        Ui.Until(() => (int)_app.Settings()["GridLostDelaySeconds"]! == 90, "the delay to be saved");
+        Ui.Until(() => (int)_app.Ups()["GridLostDelaySeconds"]! == 90, "the delay to be saved");
 
         var unreachable = window.ByName("Battery low after this many minutes unreachable on battery");
         Assert.Equal("0", unreachable.Value());
         unreachable.SetFocus();
         unreachable.SetValue("5");
-        Ui.Until(() => (int)_app.Settings()["UnreachableOnBatteryMinutes"]! == 5, "the unreachable limit to be saved");
+        Ui.Until(() => (int)_app.Ups()["UnreachableOnBatteryMinutes"]! == 5, "the unreachable limit to be saved");
     }
 
     [Fact]
@@ -134,17 +134,17 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        window.ByName("Forget").InvokeAsync();
-        Assert.Equal("Stop monitoring this UPS and forget it?", Ui.Answer(_app.Pid, "No"));
+        window.ByName("Forget Bluetti Simulator").InvokeAsync();
+        Assert.Equal("Stop monitoring Bluetti Simulator and forget it?", Ui.Answer(_app.Pid, "No"));
         window.HasText("PairedTitle", "Bluetti Simulator");
 
-        window.ByName("Forget").InvokeAsync();
+        window.ByName("Forget Bluetti Simulator").InvokeAsync();
         Ui.Answer(_app.Pid, "Yes");
 
         window.HasText("PairedTitle", "No UPS paired");
-        window.HasText("PairedDetail", "Find your UPS to start monitoring it.");
-        Ui.Until(() => _app.Settings()["Ups"] is null, "the UPS to be forgotten");
-        Ui.Until(() => window.TryByName("Forget") is null || window.ByName("Forget").Current.IsOffscreen, "Forget to hide");
+        window.HasText("PairedDetail", "Add your UPS to start monitoring it.");
+        Ui.Until(() => _app.UpsCount() == 0, "the UPS to be forgotten");
+        Ui.Until(() => window.TryByName("Forget Bluetti Simulator") is null, "its Forget button to go");
         _app.Tab("Dashboard").HasText("DeviceTitle", "No UPS paired");
     }
 
@@ -155,7 +155,7 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        window.ByName("Find UPS…").InvokeAsync();
+        window.ByName("Add UPS…").InvokeAsync();
         var dialog = Ui.WindowOf(_app.Pid, "Find UPS");
         dialog.HasText("StatusText", "Found 1 UPS. Select it and click Pair.");
         dialog.ByName("Bluetti Simulator");
@@ -165,7 +165,7 @@ public sealed class ConfigurationUiTests : IDisposable
 
         Ui.Until(() => dialog.Current.IsOffscreen, "the dialog to close", TimeSpan.FromSeconds(30));
         window.HasText("PairedTitle", "Bluetti Simulator");
-        Ui.Until(() => (string?)_app.Settings()["Ups"]?["DriverId"] == "simulated", "the pairing to be saved");
+        Ui.Until(() => _app.UpsCount() == 1 && (string?)_app.Ups()["Device"]?["DriverId"] == "simulated", "the pairing to be saved");
         Assert.Contains("Pairing check OK: Simulator, serial SIM0001, battery 80 %", _app.Log());
         _app.Tab("Dashboard").HasText("LinkText", "Connected");
     }
@@ -177,7 +177,7 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        window.ByName("Find UPS…").InvokeAsync();
+        window.ByName("Add UPS…").InvokeAsync();
         var dialog = Ui.WindowOf(_app.Pid, "Find UPS");
         var item = dialog.ByName("Bluetti Simulator");
         Ui.Until(() => dialog.ById("PairButton").Current.IsEnabled, "the UPS to be selected");
@@ -195,7 +195,7 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        window.ByName("Find UPS…").InvokeAsync();
+        window.ByName("Add UPS…").InvokeAsync();
         var dialog = Ui.WindowOf(_app.Pid, "Find UPS");
         dialog.HasText("StatusText", "No supported UPS found. Check that it is on and nearby, then scan again.");
         Assert.False(dialog.ById("PairButton").Current.IsEnabled);
@@ -207,7 +207,7 @@ public sealed class ConfigurationUiTests : IDisposable
         dialog.ByName("Cancel").Invoke();
         Ui.Until(() => dialog.Current.IsOffscreen, "the dialog to close");
         window.HasText("PairedTitle", "No UPS paired");
-        Assert.Null(_app.Settings()["Ups"]);
+        Assert.Equal(0, _app.UpsCount());
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        window.ByName("Find UPS…").InvokeAsync();
+        window.ByName("Add UPS…").InvokeAsync();
         var dialog = Ui.WindowOf(_app.Pid, "Find UPS");
         dialog.HasText("StatusText", "Found 1 UPS. Select it and click Pair.");
         dialog.ById("PairButton").Invoke();
@@ -235,7 +235,7 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        window.ByName("Find UPS…").InvokeAsync();
+        window.ByName("Add UPS…").InvokeAsync();
         var dialog = Ui.WindowOf(_app.Pid, "Find UPS");
         dialog.ByName("Cancel").Invoke();
 

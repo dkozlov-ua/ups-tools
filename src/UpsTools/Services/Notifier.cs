@@ -15,7 +15,8 @@ namespace UpsTools.Services;
 /// </summary>
 public interface INotifications
 {
-    void Show(UpsNotice notice, string? attribution);
+    /// <param name="source">Which UPS it is about: notices of different UPSes don't replace each other.</param>
+    void Show(UpsNotice notice, string? attribution, string? source = null);
 
     /// <param name="tag">A later notification with the same tag replaces this one.</param>
     void Show(string tag, TrayState state, string title, string body, string? footnote = null,
@@ -49,8 +50,11 @@ public sealed class Notifier : INotifications
         _activated = activated;
     }
 
-    public void Show(UpsNotice notice, string? attribution) =>
-        Show(notice.Tag, ToTray(notice.Tone), notice.Title, notice.Body, notice.Footnote, attribution, notice.Important);
+    public void Show(UpsNotice notice, string? attribution, string? source = null) =>
+        Show(TagOf(notice.Tag, source), ToTray(notice.Tone), notice.Title, notice.Body, notice.Footnote, attribution, notice.Important);
+
+    /// <summary>The tag of a notification about <paramref name="source"/>, a UPS (none: about the app).</summary>
+    public static string TagOf(string tag, string? source) => source is null ? tag : $"{tag}-{source}";
 
     /// <param name="tag">A later notification with the same tag replaces this one.</param>
     public void Show(string tag, TrayState state, string title, string body, string? footnote = null,

@@ -2,12 +2,16 @@
 
 <img src="tools/app-icon-preview.png" alt="App icon" height="64">
 
-A small Windows tray app that watches a UPS / portable power station and runs your scripts when its state changes,
-e.g. pause games and put the NAS to sleep when the grid goes down, hibernate the PC when the battery runs low, and wake
-the NAS when the grid comes back.
+A small Windows tray app that watches one or more UPSes / portable power stations and runs your scripts when their
+state changes, e.g. pause games and put the NAS to sleep when the grid goes down, hibernate the PC when the battery runs
+low, and wake the NAS when the grid comes back.
 
+- **Several UPSes**: pair as many as you like; they are monitored at the same time, each with its own scripts, event
+  limits and notifications, and optionally a name of its own (e.g. *Desk*, *Server rack*) that notifications, the tray
+  and the log use. With more than one, a picker next to the tabs chooses the UPS the window shows, and the dashboard
+  has a tile for each.
 - **Dashboard**: grid status, battery level, charge/discharge rate, estimated time on battery, input and output power, recent activity.
-- **Scripts**: attach any number of scripts to each event. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
+- **Scripts**: attach any number of scripts to each event of each UPS. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
   file association; `.ps1` files run hidden through PowerShell. Arguments are optional.
   - They start in the listed order; drag a script by its handle (or Alt+Up / Alt+Down) to reorder.
   - **Wait until it finishes**: the next script starts only after this one exits with code 0. If it fails (another exit
@@ -27,11 +31,13 @@ the NAS when the grid comes back.
 - **Script variables**: scripts get the event and the UPS's state in environment variables (see
   [Environment variables](#environment-variables)), so one script can serve several events or pass the state on.
 - **Notifications**: a Windows notification for each event, e.g. *Grid lost — running on battery: Battery 87 % ·
-  about 6 h 10 m left at 120 W*, naming the scripts it started. *Grid restored* says how long the outage lasted and
-  replaces the *Grid lost* or *Battery low* notification; *UPS reachable again* replaces *UPS unreachable*. Clicking one
-  opens the app.
-- **Configuration**: pair the UPS, close to tray, start with Windows, UPS update period, how long the grid must be gone
-  before *Grid lost*, the *Battery low* limits, which events notify.
+  about 6 h 10 m left at 120 W*, naming the scripts it started and the UPS. *Grid restored* says how long the outage
+  lasted and replaces the same UPS's *Grid lost* or *Battery low* notification; *UPS reachable again* replaces
+  *UPS unreachable*. Clicking one opens the app.
+- **Tray icon**: coloured by the UPS that needs attention most (red: unreachable, yellow: on battery, green: all on
+  the grid); its tooltip has a line for each UPS.
+- **Configuration**: add and forget UPSes, close to tray, start with Windows, the update period; for each UPS, its
+  name, how long the grid must be gone before *Grid lost*, the *Battery low* limits, which events notify.
 - **Updates**: Configuration → About → **Check for updates** looks for a newer release here; **Update to X.Y.Z** downloads
   its setup, checks it against the SHA-256 GitHub lists for it and runs it, which updates the app and opens it again.
 
@@ -81,7 +87,7 @@ report how much energy it holds, so the time left is worked out from its model's
 Smart Extra Battery when one is plugged in; it doesn't report its input voltage either, so the grid counts as present
 while its AC input is plugged in.
 
-The UPS accepts a single Bluetooth connection: while UPS Tools is connected, the phone app can only reach the UPS over
+A UPS accepts a single Bluetooth connection: while UPS Tools is connected to it, its phone app can only reach it over
 Wi-Fi.
 
 ## Requirements
@@ -98,9 +104,12 @@ signed, so SmartScreen may ask you to confirm (*More info* → *Run anyway*). Se
 
 ## Usage
 
-- Configuration → **Find UPS…** → select your UPS → **Pair**. For an EcoFlow UPS, enter the user ID of its EcoFlow
-  account first, or the account's email and password and **Look up user ID**.
-- Settings and the log are in `%APPDATA%\UpsTools` (`settings.json`, `ups-tools.log`).
+- Configuration → **Add UPS…** → select your UPS → **Pair**. For an EcoFlow UPS, enter the user ID of its EcoFlow
+  account first, or the account's email and password and **Look up user ID**. Do the same for each UPS; pairing one
+  that is already in the list again updates it (e.g. its user ID) and keeps its scripts. **Forget** removes a UPS with
+  its scripts.
+- Settings and the log are in `%APPDATA%\UpsTools` (`settings.json`, `ups-tools.log`). Settings of 0.6.0 and earlier
+  (one UPS) are moved into the list of UPSes when the app starts; the old file stays as `settings.json.before-0.7.0`.
 - Notifications are registered as *UPS Tools* (`HKCU\Software\Classes\AppUserModelId\DKozlov.UpsTools`); their images
   are in `%LOCALAPPDATA%\UpsTools`. Windows' own settings (Do not disturb, the per-app switch) decide whether they pop up.
 - `UpsTools.exe --background` starts hidden in the tray (used by "Start with Windows").
@@ -127,6 +136,7 @@ doesn't report, or that doesn't apply, isn't set.
 | `UPS_RUNTIME_MINUTES` | Estimated minutes left on battery at the average load of the last 5 minutes |
 | `UPS_LOAD_W` | Output power in watts |
 | `UPS_OUTAGE_SECONDS` | For *Grid restored*, how long the outage lasted; on battery, how long it has lasted so far |
+| `UPS_NAME` | The UPS's name in UPS Tools: the one you gave it, or its brand and model, e.g. `Bluetti EL100V2` |
 | `UPS_MODEL`, `UPS_SERIAL` | The UPS |
 | `UPS_READING_TIME` | When the readings were taken, e.g. `2026-11-05T21:30:05+02:00` |
 
@@ -183,7 +193,8 @@ To support another manufacturer, implement `IUpsDriver` / `IUpsConnection` and r
   can keep running. The test suites run as such profiles and remove what they create.
 - **Simulated UPS.** With `UPSTOOLS_SIMULATOR` set to a JSON file, the simulator is the only UPS driver. Every poll
   reads the file, e.g. `{"GridPresent": false, "BatteryPercent": 80, "AcOutputW": 120}`; `{"Fail": "message"}` makes
-  polls fail (see `SimulatedUpsDriver`). Find UPS finds it while the file exists. With the simulator, *Sleep*,
+  polls fail (see `SimulatedUpsDriver`). Find UPS finds it while the file exists. Several files separated by `;` are
+  several UPSes (`00:00:00:00:00:01`, `…:02`, …). With the simulator, *Sleep*,
   *Hibernate* and *Shut down* only write to the log.
 - **Administrator tasks.** The tests that register real scheduled tasks run only in an elevated shell; otherwise
   they are skipped.

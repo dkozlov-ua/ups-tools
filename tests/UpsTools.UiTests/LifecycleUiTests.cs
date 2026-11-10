@@ -38,7 +38,7 @@ public sealed class LifecycleUiTests : IDisposable
     [Fact]
     public void Closing_the_window_exits_when_close_to_tray_is_off()
     {
-        _app.Seed(s => s["CloseToTray"] = false);
+        _app.Seed(app: s => s["CloseToTray"] = false);
         var window = _app.Start()!;
 
         Close(window);

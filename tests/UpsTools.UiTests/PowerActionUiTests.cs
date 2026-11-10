@@ -35,8 +35,8 @@ public sealed class PowerActionUiTests : IDisposable
             new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem),
             new PropertyCondition(AutomationElement.NameProperty, "Hibernate"))), "the action menu").Invoke();
 
-        Ui.Until(() => (string?)_app.Settings()["Scripts"]?["BatteryLow"]?[0]?["Power"] == "Hibernate", "Hibernate to be saved");
-        Assert.Equal(60, (int)_app.Settings()["Scripts"]!["BatteryLow"]![0]!["CountdownSeconds"]!);
+        Ui.Until(() => (string?)_app.Ups()["Scripts"]?["BatteryLow"]?[0]?["Power"] == "Hibernate", "Hibernate to be saved");
+        Assert.Equal(60, (int)_app.Ups()["Scripts"]!["BatteryLow"]![0]!["CountdownSeconds"]!);
         Assert.Contains(window.AllById("ScriptName"), n => n.Text() == "Hibernate");
         Assert.Null(window.TryByName("Arguments for Hibernate")); // no arguments or options: a countdown instead
         Assert.Null(window.TryByName("Wait until Hibernate finishes"));
@@ -45,7 +45,7 @@ public sealed class PowerActionUiTests : IDisposable
         Assert.Equal("60", countdown.Value());
         countdown.SetFocus();
         countdown.SetValue("900");
-        Ui.Until(() => (int)_app.Settings()["Scripts"]!["BatteryLow"]![0]!["CountdownSeconds"]! == 600, "the countdown to be saved, at most 600 s");
+        Ui.Until(() => (int)_app.Ups()["Scripts"]!["BatteryLow"]![0]!["CountdownSeconds"]! == 600, "the countdown to be saved, at most 600 s");
         window.ByName("Run the Battery low scripts now").SetFocus();
         Ui.Until(() => countdown.Value() == "600", "the box to show what applies");
     }

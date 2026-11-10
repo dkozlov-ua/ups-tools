@@ -5,8 +5,11 @@ using UpsTools.Services;
 
 namespace UpsTools.AppTests.Support;
 
-/// <summary>A UPS driver whose one connection reads what the test queues, one reading per poll.</summary>
-internal sealed class FakeUps : IUpsDriver, IUpsConnection
+/// <summary>
+/// A UPS driver whose one connection reads what the test queues, one reading per poll. A test with several UPSes
+/// has one of these each, with a driver ID of its own.
+/// </summary>
+internal sealed class FakeUps(PairedUps? device = null) : IUpsDriver, IUpsConnection
 {
     public const string DriverId = "fake";
 
@@ -19,12 +22,15 @@ internal sealed class FakeUps : IUpsDriver, IUpsConnection
     public int Connections;
     public bool Disposed;
 
-    public string Id => DriverId;
+    /// <summary>The UPS it plays.</summary>
+    public PairedUps Device { get; } = device ?? Paired;
+
+    public string Id => Device.DriverId;
     public string DisplayName => "Fake UPS";
 
     public Task DiscoverAsync(Action<DiscoveredUps> onFound, TimeSpan duration, CancellationToken cancellationToken)
     {
-        onFound(new DiscoveredUps(DriverId, Paired.Address, Paired.Name, Paired.Model, -50));
+        onFound(new DiscoveredUps(Id, Device.Address, Device.Name, Device.Model, -50));
         return Task.CompletedTask;
     }
 
@@ -96,10 +102,10 @@ internal sealed class FakeNotifications : INotifications
     public List<Shown> All { get; } = [];
     public List<UpsNotice> Notices { get; } = [];
 
-    public void Show(UpsNotice notice, string? attribution)
+    public void Show(UpsNotice notice, string? attribution, string? source = null)
     {
         Notices.Add(notice);
-        All.Add(new(notice.Tag, Notifier.ToTray(notice.Tone), notice.Title, notice.Body, notice.Footnote, attribution, notice.Important));
+        All.Add(new(Notifier.TagOf(notice.Tag, source), Notifier.ToTray(notice.Tone), notice.Title, notice.Body, notice.Footnote, attribution, notice.Important));
     }
 
     public void Show(string tag, TrayState state, string title, string body, string? footnote = null,

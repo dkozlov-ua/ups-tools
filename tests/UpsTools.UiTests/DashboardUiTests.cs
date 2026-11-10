@@ -39,7 +39,7 @@ public sealed class DashboardUiTests : IDisposable
         var window = _app.Start()!;
 
         window.HasText("DeviceTitle", "No UPS paired");
-        window.HasText("DeviceSubtitle", "Open Configuration → Find UPS to pair one.");
+        window.HasText("DeviceSubtitle", "Open Configuration → Add UPS to pair one.");
         window.HasText("LinkText", "Not paired");
         window.HasText("GridValue", "—");
     }

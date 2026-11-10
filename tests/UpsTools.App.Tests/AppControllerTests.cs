@@ -16,6 +16,7 @@ public sealed class AppControllerTests : IDisposable
     private readonly TempFolder _folder = new();
     private readonly AppLog _log;
     private readonly FakeUps _ups = new();
+    private readonly List<FakeUps> _others = [];
     private readonly FakeTray _tray = new();
     private readonly FakeNotifications _notes = new();
     private readonly FakeScripts _scripts = new();
@@ -41,15 +42,22 @@ public sealed class AppControllerTests : IDisposable
 
     private static ScriptAction Power(PowerAction power, int countdown = 60) => new() { Power = power, CountdownSeconds = countdown };
 
-    private async Task<AppController> Start(Action<AppSettings>? seed = null, bool paired = true, bool monitor = true)
+    /// <summary>Its notifications are tagged with the first 8 characters of this.</summary>
+    private const string UpsId = "first";
+
+    /// <param name="seed">Sets up the UPS's settings.</param>
+    /// <param name="others">More UPSes, after the first: each with its own <see cref="FakeUps"/>.</param>
+    private async Task<AppController> Start(Action<UpsSettings>? seed = null, bool paired = true, bool monitor = true,
+        params UpsSettings[] others)
     {
-        var settings = new AppSettings { Ups = paired ? FakeUps.Paired : null };
-        seed?.Invoke(settings);
+        var ups = new UpsSettings { Id = UpsId, Device = FakeUps.Paired };
+        seed?.Invoke(ups);
+        var settings = new AppSettings { Upses = [.. paired ? [ups] : Array.Empty<UpsSettings>(), .. others] };
         new SettingsStore(new AppLog(_folder.Path), _folder.Path).Save(settings);
 
         _controller = await UiThread.Run(() =>
         {
-            var controller = new AppController(UiThread.Dispatcher, _log, [_ups], _scripts.RunAsync, _power, _countdown.ShowAsync);
+            var controller = new AppController(UiThread.Dispatcher, _log, [_ups, .. _others], _scripts.RunAsync, _power, _countdown.ShowAsync);
             controller.Settings.UpdatePeriodSeconds = 0; // the scripted UPS sets the pace
             controller.AttachTray(_tray, _notes);
             if (monitor) controller.StartMonitoring();
@@ -93,14 +101,15 @@ public sealed class AppControllerTests : IDisposable
         Assert.Equal((TrayState.Neutral, "No UPS paired"), _tray.Current);
         Assert.Equal(0, _ups.Connections);
         Assert.Equal(LinkStatus.NotPaired, await Ui(() => controller.Dashboard.Link));
-        Assert.False(await Ui(() => controller.Configuration.IsPaired));
-        Assert.Equal(5, controller.EventScripts.Count);
+        Assert.False(await Ui(() => controller.HasUps));
+        Assert.Null(controller.Selected);
+        Assert.Empty(controller.Upses);
     }
 
     [Fact]
     public async Task An_unknown_driver_is_reported()
     {
-        await Start(s => s.Ups = FakeUps.Paired with { DriverId = "gone" });
+        await Start(s => s.Device = FakeUps.Paired with { DriverId = "gone" });
         Assert.Contains(_log.Recent, e => e.Level == LogLevel.Warning && e.Message == "Cannot monitor FAKE123: Unknown UPS driver 'gone'");
         Assert.Equal(0, _ups.Connections);
     }
@@ -179,7 +188,7 @@ public sealed class AppControllerTests : IDisposable
 
         Assert.Equal([("pause.ahk", "Grid lost"), ("save.ps1", "Grid lost")], _scripts.Ran);
         var shown = Assert.Single(_notes.All);
-        Assert.Equal(new FakeNotifications.Shown("grid", TrayState.OnBattery, "Grid lost — running on battery",
+        Assert.Equal(new FakeNotifications.Shown("grid-first", TrayState.OnBattery, "Grid lost — running on battery",
             "Battery 70 % · about 5 h 58 m left at 120 W", "Started pause.ahk; waiting for save.ps1, then hibernate.bat",
             "Bluetti EL100V2", true), shown);
         Assert.Contains(_log.Recent, e => e.Level == LogLevel.Event && e.Message == "Grid lost");
@@ -230,7 +239,7 @@ public sealed class AppControllerTests : IDisposable
 
         _ups.Answer(false, 20);
         await UiUntil(() => _notes.All.Count == 2, "Battery low");
-        Assert.Equal(new FakeNotifications.Shown("grid", TrayState.Problem, "Battery low",
+        Assert.Equal(new FakeNotifications.Shown("grid-first", TrayState.Problem, "Battery low",
             "Battery 20 % · about 1 h 42 m left at 120 W", "Waiting for save.ps1, then hibernate.ps1", "Bluetti EL100V2", true), _notes.All[1]);
         Assert.Contains(_log.Recent, e => e.Level == LogLevel.Event && e.Message == "Battery low");
 
@@ -306,7 +315,7 @@ public sealed class AppControllerTests : IDisposable
         _power.Refuse = "hibernation is turned off";
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).AddRange([Power(PowerAction.Hibernate, 0), Script("after.ps1")]), monitor: false);
 
-        await UiThread.Run(() => controller.RunScripts(controller.EventScripts[0], "Manual run"));
+        await UiThread.Run(() => controller.RunScripts(controller.Selected!.EventScripts[0], "Manual run"));
         await UiUntil(() => _notes.All.Count == 1);
 
         Assert.Equal(("Manual run: Hibernate failed", "Hibernation is turned off, so after.ps1 didn't run."), (_notes.All[0].Title, _notes.All[0].Body));
@@ -318,7 +327,7 @@ public sealed class AppControllerTests : IDisposable
     {
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).Add(Power(PowerAction.ShutDown, 10)), monitor: false);
 
-        await UiThread.Run(() => controller.RunScript(controller.Settings.ScriptsFor(UpsEventKind.GridLost)[0], "Manual run"));
+        await UiThread.Run(() => controller.RunScript(controller.Selected!.Settings.ScriptsFor(UpsEventKind.GridLost)[0], "Manual run"));
         Assert.Equal((PowerAction.ShutDown, TimeSpan.FromSeconds(10), "Manual run"), Assert.Single(_countdown.Shown));
         _countdown.GoAhead();
         await Wait.Until(() => _power.Done.Count == 1);
@@ -332,7 +341,7 @@ public sealed class AppControllerTests : IDisposable
             s.GridLostDelaySeconds = 30;
             s.ScriptsFor(UpsEventKind.GridLost).Add(Script("lost.ps1"));
         });
-        Assert.Equal(30, controller.Monitor!.Rules.GridLostDelaySeconds);
+        Assert.Equal(30, controller.Selected!.Monitor!.Rules.GridLostDelaySeconds);
         var t0 = DateTimeOffset.Now;
         await Online(at: t0);
 
@@ -365,7 +374,7 @@ public sealed class AppControllerTests : IDisposable
         _ups.Fail();
         await UiUntil(() => controller.Dashboard.Link == LinkStatus.Unreachable);
 
-        await UiThread.Run(() => controller.OnUpsEvent(UpsEventKind.BatteryLow, null)); // as the monitor raises it
+        await UiThread.Run(() => controller.OnUpsEvent(controller.Selected!, UpsEventKind.BatteryLow, null)); // as the monitor raises it
 
         var notice = _notes.Notices.Last();
         Assert.Equal("Battery low — UPS unreachable", notice.Title);
@@ -379,8 +388,8 @@ public sealed class AppControllerTests : IDisposable
     public async Task The_unreachable_on_battery_limit_reaches_the_monitor_and_is_saved()
     {
         var controller = await Start();
-        await UiThread.Run(() => controller.Configuration.UnreachableOnBattery.Text = "7");
-        Assert.Equal(7, controller.Monitor!.Rules.UnreachableOnBatteryMinutes);
+        await UiThread.Run(() => controller.Selected!.Configuration.UnreachableOnBattery.Text = "7");
+        Assert.Equal(7, controller.Selected!.Monitor!.Rules.UnreachableOnBatteryMinutes);
         Assert.Contains("\"UnreachableOnBatteryMinutes\": 7", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
     }
 
@@ -388,8 +397,8 @@ public sealed class AppControllerTests : IDisposable
     public async Task A_new_grid_lost_delay_reaches_the_monitor_and_is_saved()
     {
         var controller = await Start();
-        await UiThread.Run(() => controller.Configuration.GridLostDelay.Text = "45");
-        Assert.Equal(new EventRules(20, 10, 45, 0), controller.Monitor!.Rules);
+        await UiThread.Run(() => controller.Selected!.Configuration.GridLostDelay.Text = "45");
+        Assert.Equal(new EventRules(20, 10, 45, 0), controller.Selected!.Monitor!.Rules);
         Assert.Contains("\"GridLostDelaySeconds\": 45", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
     }
 
@@ -397,10 +406,10 @@ public sealed class AppControllerTests : IDisposable
     public async Task New_battery_low_limits_reach_the_monitor_and_are_saved()
     {
         var controller = await Start(s => s.BatteryLowMinutes = 0);
-        Assert.Equal(new EventRules(20, 0), controller.Monitor!.Rules);
+        Assert.Equal(new EventRules(20, 0), controller.Selected!.Monitor!.Rules);
 
-        await UiThread.Run(() => controller.Configuration.BatteryLowPercent.Text = "40");
-        Assert.Equal(new EventRules(40, 0), controller.Monitor.Rules);
+        await UiThread.Run(() => controller.Selected!.Configuration.BatteryLowPercent.Text = "40");
+        Assert.Equal(new EventRules(40, 0), controller.Selected!.Monitor!.Rules);
         Assert.Contains("\"BatteryLowPercent\": 40", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
 
         await Online(45);
@@ -431,7 +440,7 @@ public sealed class AppControllerTests : IDisposable
         _scripts.Exit("save.ps1", code: 1);
         await UiUntil(() => _notes.All.Count == 2);
 
-        Assert.Equal(new FakeNotifications.Shown("scripts", TrayState.Problem, "Grid lost: save.ps1 failed",
+        Assert.Equal(new FakeNotifications.Shown("scripts-first", TrayState.Problem, "Grid lost: save.ps1 failed",
             "Exit code 1, so hibernate.ps1 didn't run.", null, "Bluetti EL100V2", true), _notes.All[1]);
         Assert.Contains(_log.Recent, e => e.Level == LogLevel.Warning && e.Message == "Grid lost: save.ps1 failed, so hibernate.ps1 didn't run");
         Assert.Equal(["save.ps1"], _scripts.Names);
@@ -472,8 +481,8 @@ public sealed class AppControllerTests : IDisposable
     public async Task The_same_event_again_replaces_its_running_chain()
     {
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).AddRange([Script("wait.ps1", wait: true), Script("after.ps1")]));
-        await UiThread.Run(() => controller.OnUpsEvent(UpsEventKind.GridLost, null));
-        await UiThread.Run(() => controller.OnUpsEvent(UpsEventKind.GridLost, null));
+        await UiThread.Run(() => controller.OnUpsEvent(controller.Selected!, UpsEventKind.GridLost, null));
+        await UiThread.Run(() => controller.OnUpsEvent(controller.Selected!, UpsEventKind.GridLost, null));
 
         Assert.Contains(_log.Recent, e => e.Message == "Grid lost started again: stopped the Grid lost scripts; after.ps1 won't run");
         Assert.Equal(["wait.ps1", "wait.ps1"], _scripts.Names);
@@ -505,7 +514,7 @@ public sealed class AppControllerTests : IDisposable
     public async Task An_event_with_nothing_running_and_no_scripts_says_so_in_the_log()
     {
         var controller = await Start();
-        await UiThread.Run(() => controller.OnUpsEvent(UpsEventKind.GridRestored, null));
+        await UiThread.Run(() => controller.OnUpsEvent(controller.Selected!, UpsEventKind.GridRestored, null));
         Assert.Contains(_log.Recent, e => e.Message == "Grid restored: no scripts to run");
         Assert.Null(_notes.Notices.Single().Footnote);
     }
@@ -592,8 +601,8 @@ public sealed class AppControllerTests : IDisposable
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.UpsReachable).AddRange([Script("a.ps1"), Script("b.ps1")]));
         await Online(66);
 
-        await UiThread.Run(() => controller.RunScripts(controller.EventScripts.Single(g => g.Kind == UpsEventKind.UpsReachable), "Manual run"));
-        await UiThread.Run(() => controller.RunScript(controller.Settings.ScriptsFor(UpsEventKind.UpsReachable)[1], "Manual run"));
+        await UiThread.Run(() => controller.RunScripts(controller.Selected!.EventScripts.Single(g => g.Kind == UpsEventKind.UpsReachable), "Manual run"));
+        await UiThread.Run(() => controller.RunScript(controller.Selected!.Settings.ScriptsFor(UpsEventKind.UpsReachable)[1], "Manual run"));
         await Wait.Until(() => _scripts.Ran.Count == 3);
 
         foreach (var name in new[] { "a.ps1", "b.ps1" })
@@ -607,7 +616,7 @@ public sealed class AppControllerTests : IDisposable
     public async Task Without_monitoring_run_now_knows_nothing_about_the_ups()
     {
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).Add(Script("a.ps1")), monitor: false);
-        await UiThread.Run(() => controller.RunScripts(controller.EventScripts[0], "Manual run"));
+        await UiThread.Run(() => controller.RunScripts(controller.Selected!.EventScripts[0], "Manual run"));
         var variables = _scripts.Variables["a.ps1"];
         Assert.Equal(("GridLost", "1"), (variables["UPS_EVENT"], variables["UPS_MANUAL"]));
         Assert.Null(variables["UPS_REACHABLE"]);
@@ -618,7 +627,7 @@ public sealed class AppControllerTests : IDisposable
     public async Task Run_now_runs_an_events_enabled_scripts_without_a_notification()
     {
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).AddRange([Script("a.ps1"), Script("b.ps1", enabled: false)]), monitor: false);
-        var group = controller.EventScripts.Single(g => g.Kind == UpsEventKind.GridLost);
+        var group = controller.Selected!.EventScripts.Single(g => g.Kind == UpsEventKind.GridLost);
 
         await UiThread.Run(() => controller.RunScripts(group, "Manual run of \"Grid lost\""));
         await Task.Delay(100);
@@ -633,10 +642,10 @@ public sealed class AppControllerTests : IDisposable
         _scripts.Broken.Add("b.ps1");
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).AddRange([Script("a.ps1"), Script("b.ps1")]), monitor: false);
 
-        await UiThread.Run(() => controller.RunScripts(controller.EventScripts[0], "Manual run"));
+        await UiThread.Run(() => controller.RunScripts(controller.Selected!.EventScripts[0], "Manual run"));
         await UiUntil(() => _notes.All.Count == 1);
 
-        Assert.Equal(new FakeNotifications.Shown("scripts", TrayState.Problem, "Manual run: couldn't start b.ps1",
+        Assert.Equal(new FakeNotifications.Shown("scripts-first", TrayState.Problem, "Manual run: couldn't start b.ps1",
             "b.ps1: file not found.", null, "Bluetti EL100V2", true), _notes.All[0]);
     }
 
@@ -645,7 +654,7 @@ public sealed class AppControllerTests : IDisposable
     {
         var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).Add(Script("one.ps1", wait: true)), monitor: false);
 
-        await UiThread.Run(() => controller.RunScript(controller.Settings.ScriptsFor(UpsEventKind.GridLost)[0], "Manual run"));
+        await UiThread.Run(() => controller.RunScript(controller.Selected!.Settings.ScriptsFor(UpsEventKind.GridLost)[0], "Manual run"));
         _scripts.Exit("one.ps1", code: 5);
         await UiUntil(() => _notes.All.Count == 1);
 
@@ -664,7 +673,7 @@ public sealed class AppControllerTests : IDisposable
 
         Assert.Equal(1, _ups.Connections);
         Assert.Contains("\"DriverId\": \"fake\"", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
-        Assert.True(await Ui(() => controller.Configuration.IsPaired));
+        Assert.True(await Ui(() => controller.HasUps));
         Assert.Contains(_log.Recent, e => e.Message == "Paired with FAKE123 (00:11:22:33:44:55)");
         await Online();
     }
@@ -675,12 +684,15 @@ public sealed class AppControllerTests : IDisposable
         var controller = await Start();
         await Online();
 
-        await UiThread.Run(controller.ForgetAsync);
+        var unit = controller.Selected!;
+        await UiThread.Run(() => controller.ForgetAsync(unit));
 
         Assert.True(_ups.Disposed);
-        Assert.Null(controller.Settings.Ups);
-        Assert.Null(controller.Monitor);
-        Assert.Contains("\"Ups\": null", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
+        Assert.Empty(controller.Settings.Upses);
+        Assert.Empty(controller.Upses);
+        Assert.Null(controller.Selected);
+        Assert.Null(unit.Monitor);
+        Assert.Contains("\"Upses\": []", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
         Assert.Equal((TrayState.Neutral, "No UPS paired"), _tray.Current);
         Assert.Equal(LinkStatus.NotPaired, await Ui(() => controller.Dashboard.Link));
         Assert.Contains(_log.Recent, e => e.Message == "Forgot FAKE123");
@@ -710,7 +722,7 @@ public sealed class AppControllerTests : IDisposable
     {
         var controller = await Start();
         await UiThread.Run(() => controller.Configuration.UpdatePeriod.Text = "45");
-        Assert.Equal(TimeSpan.FromSeconds(45), controller.Monitor!.Period);
+        Assert.Equal(TimeSpan.FromSeconds(45), controller.Selected!.Monitor!.Period);
         Assert.Contains("\"UpdatePeriodSeconds\": 45", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
     }
 
@@ -751,16 +763,188 @@ public sealed class AppControllerTests : IDisposable
         _log.Info("before");
         var controller = await Start(monitor: false);
         _log.Warn("after");
-        await UiUntil(() => controller.Dashboard.Activity.Count == 2);
-        Assert.Equal(["after", "before"], await Ui(() => controller.Dashboard.Activity.Select(a => a.Message).ToList()));
+        await UiUntil(() => controller.Activity.Count == 2);
+        Assert.Equal(["after", "before"], await Ui(() => controller.Activity.Select(a => a.Message).ToList()));
     }
 
     [Fact]
     public async Task Script_edits_are_saved()
     {
         var controller = await Start(monitor: false);
-        await UiThread.Run(() => controller.EventScripts[1].Add(@"C:\scripts\wake.ahk"));
+        await UiThread.Run(() => controller.Selected!.EventScripts[1].Add(@"C:\scripts\wake.ahk"));
         Assert.Contains(@"wake.ahk", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
         Assert.Equal(Path.Combine(_folder.Path), controller.SettingsFolder);
+    }
+
+    // ---- several UPSes
+
+    /// <summary>A second UPS, with a driver of its own, monitored after the first.</summary>
+    private (FakeUps Fake, UpsSettings Settings) Second(string? label = "Office", Action<UpsSettings>? seed = null)
+    {
+        var fake = new FakeUps(new PairedUps("fake-b", "00:11:22:33:44:66", "RIVER456", "River 3 Plus"));
+        _others.Add(fake);
+        var settings = new UpsSettings { Id = "second-ups", Device = fake.Device, Label = label };
+        seed?.Invoke(settings);
+        return (fake, settings);
+    }
+
+    [Fact]
+    public async Task Several_upses_are_monitored_at_once_and_the_tray_shows_each()
+    {
+        var (second, settings) = Second();
+        var controller = await Start(others: settings);
+        Assert.Equal(["Bluetti EL100V2", "Office"], await Ui(() => controller.Upses.Select(u => u.Title).ToList()));
+        Assert.True(await Ui(() => controller.HasSeveral));
+
+        _ups.Answer(true, 80);
+        second.Answer(FakeUps.Status(true, 50, output: 60));
+        await UiUntil(() => controller.Upses.All(u => u.Dashboard.Link == LinkStatus.Online), "both readings");
+
+        Assert.Equal("80 %", await Ui(() => controller.Upses[0].Dashboard.BatteryValue));
+        Assert.Equal("50 %", await Ui(() => controller.Upses[1].Dashboard.BatteryValue));
+        Assert.Equal(controller.Upses[0], await Ui(() => controller.Selected));
+        await UiUntil(() => _tray.Current == (TrayState.GridOnline,
+            "Bluetti EL100V2: Grid online · 80 % · 120 W load\nOffice: Grid online · 50 % · 60 W load"), "the tray");
+
+        // The colour is that of the UPS that needs attention most.
+        second.Fail();
+        second.Fail();
+        second.Fail();
+        await UiUntil(() => _tray.Current.State == TrayState.Problem, "the problem");
+        Assert.Equal("Bluetti EL100V2: Grid online · 80 % · 120 W load\nOffice: UPS unreachable", _tray.Current.Status);
+        Assert.Contains(_log.Recent, e => e.Message == "Office: UPS read failed: out of range");
+
+        // Selecting the other one shows it.
+        await UiThread.Run(() => controller.Selected = controller.Upses[1]);
+        Assert.Equal(("Office", LinkStatus.Unreachable), await Ui(() => (controller.Dashboard.DeviceTitle, controller.Dashboard.Link)));
+    }
+
+    [Fact]
+    public async Task Each_ups_runs_its_own_scripts_and_notifies_on_its_own()
+    {
+        var (second, settings) = Second(seed: s => s.ScriptsFor(UpsEventKind.GridLost).Add(Script("office.ps1")));
+        var controller = await Start(s =>
+        {
+            s.Notifications[UpsEventKind.GridLost] = false;
+            s.ScriptsFor(UpsEventKind.GridLost).Add(Script("desk.ps1"));
+        }, others: settings);
+        _ups.Answer(true, 80);
+        second.Answer(true, 90);
+        await UiUntil(() => controller.Upses.All(u => u.Dashboard.Link == LinkStatus.Online), "both readings");
+
+        second.Answer(false, 85);
+        await UiUntil(() => _notes.All.Count == 1, "Grid lost of the second");
+        Assert.Equal([("office.ps1", "Office: Grid lost")], _scripts.Ran);
+        var shown = _notes.All.Single();
+        Assert.Equal(("grid-second-u", "Office", "Grid lost — running on battery"), (shown.Tag, shown.Attribution, shown.Title));
+        Assert.Equal("Office", _scripts.Variables["office.ps1"]["UPS_NAME"]);
+        Assert.Contains(_log.Recent, e => e.Level == LogLevel.Event && e.Message == "Office: Grid lost");
+
+        // The first one's notification is off: its scripts run all the same.
+        _ups.Answer(false, 70);
+        await Wait.Until(() => _scripts.Ran.Count == 2, what: "the first one's script");
+        Assert.Equal(("desk.ps1", "Bluetti EL100V2: Grid lost"), _scripts.Ran.Last());
+        await Task.Delay(100);
+        Assert.Single(_notes.All);
+    }
+
+    [Fact]
+    public async Task One_ups_coming_back_leaves_the_others_scripts_alone()
+    {
+        var (_, settings) = Second();
+        var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).AddRange([Script("wait.ps1", wait: true), Script("after.ps1")]),
+            monitor: false, others: settings);
+        var (first, office) = await Ui(() => (controller.Upses[0], controller.Upses[1]));
+
+        await UiThread.Run(() => controller.OnUpsEvent(first, UpsEventKind.GridLost, null));
+        await UiThread.Run(() => controller.OnUpsEvent(office, UpsEventKind.GridLost, null));
+        await UiThread.Run(() => controller.OnUpsEvent(office, UpsEventKind.GridRestored, null));
+
+        _scripts.Exit("wait.ps1");
+        await Wait.Until(() => _scripts.Names.Contains("after.ps1"), what: "the first one's next script");
+    }
+
+    [Fact]
+    public async Task Two_of_the_same_model_are_told_apart_until_named()
+    {
+        var twin = new FakeUps(FakeUps.Paired with { DriverId = "fake-b", Address = "00:11:22:33:44:77", Name = "FAKE456" });
+        _others.Add(twin);
+        var controller = await Start(others: new UpsSettings { Id = "twin", Device = twin.Device });
+        Assert.Equal(["Bluetti EL100V2 (FAKE123)", "Bluetti EL100V2 (FAKE456)"], await Ui(() => controller.Upses.Select(u => u.Title).ToList()));
+
+        await UiThread.Run(() => controller.Upses[1].Configuration.Label = "  Server rack ");
+        Assert.Equal(["Bluetti EL100V2", "Server rack"], await Ui(() => controller.Upses.Select(u => u.Title).ToList()));
+        Assert.Equal("Server rack", await Ui(() => controller.Upses[1].Dashboard.DeviceTitle));
+        Assert.Contains("\"Label\": \"Server rack\"", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
+
+        twin.Fail();
+        await UiUntil(() => _log.Recent.Any(e => e.Message == "Server rack: UPS read failed: out of range"), "the log line");
+    }
+
+    [Fact]
+    public async Task Pairing_another_ups_adds_it_and_pairing_one_again_updates_it()
+    {
+        var (second, _) = Second();
+        var controller = await Start(s => s.ScriptsFor(UpsEventKind.GridLost).Add(Script("keep.ps1")));
+        await Online();
+        await UiThread.Run(controller.StopMonitoringAsync);
+
+        var added = await UiThread.Run(() => controller.Pair(second.Device));
+        Assert.Equal(2, await Ui(() => controller.Upses.Count));
+        Assert.Equal(added, await Ui(() => controller.Selected));
+        Assert.Equal((1, 2), (second.Connections, _ups.Connections)); // both monitored again
+        Assert.Equal(["Bluetti EL100V2", "Bluetti River 3 Plus"], await Ui(() => controller.Upses.Select(u => u.Title).ToList()));
+        Assert.Empty(added.Settings.Scripts.Values.SelectMany(l => l)); // its own scripts: none yet
+
+        await UiThread.Run(controller.StopMonitoringAsync);
+        var again = await UiThread.Run(() => controller.Pair(FakeUps.Paired with { UserId = "42" }));
+        Assert.Equal(controller.Upses[0], again);
+        Assert.Equal(2, await Ui(() => controller.Upses.Count));
+        Assert.Equal("42", again.Device.UserId);
+        Assert.Equal("keep.ps1", again.Settings.ScriptsFor(UpsEventKind.GridLost).Single().Name);
+        Assert.Contains(_log.Recent, e => e.Message == "Paired with FAKE123 (00:11:22:33:44:55) again");
+    }
+
+    [Fact]
+    public async Task Forgetting_one_ups_keeps_the_others_monitored()
+    {
+        var (second, settings) = Second();
+        var controller = await Start(others: settings);
+        await UiThread.Run(() => controller.Selected = controller.Upses[1]);
+
+        await UiThread.Run(() => controller.ForgetAsync(controller.Upses[1]));
+
+        Assert.True(second.Disposed);
+        Assert.False(_ups.Disposed);
+        Assert.Equal(["Bluetti EL100V2"], await Ui(() => controller.Upses.Select(u => u.Title).ToList()));
+        Assert.Equal(controller.Upses[0], await Ui(() => controller.Selected));
+        Assert.False(await Ui(() => controller.HasSeveral));
+        Assert.Contains(_log.Recent, e => e.Message == "Forgot RIVER456");
+
+        await Online(); // and the log no longer names it
+        _ups.Fail();
+        await UiUntil(() => _log.Recent.Any(e => e.Message == "UPS read failed: out of range"), "the log line");
+    }
+
+    [Fact]
+    public async Task Sleep_and_wake_reach_every_ups()
+    {
+        var (second, settings) = Second();
+        var controller = await Start(others: settings);
+        await UiThread.Run(controller.OnGoingToSleep);
+        await UiThread.Run(controller.OnResumedFromSleep);
+        Assert.Equal((2, 2), (_ups.Resets, second.Resets));
+        Assert.Contains(_log.Recent, e => e.Message == "PC is going to sleep; disconnecting from the UPSes");
+    }
+
+    [Fact]
+    public async Task Each_ups_has_its_own_event_limits()
+    {
+        var (_, settings) = Second(seed: s => s.BatteryLowPercent = 50);
+        var controller = await Start(others: settings);
+        await UiThread.Run(() => controller.Upses[0].Configuration.GridLostDelay.Text = "45");
+
+        Assert.Equal(new EventRules(20, 10, 45, 0), controller.Upses[0].Monitor!.Rules);
+        Assert.Equal(new EventRules(50, 10, 0, 0), controller.Upses[1].Monitor!.Rules);
     }
 }

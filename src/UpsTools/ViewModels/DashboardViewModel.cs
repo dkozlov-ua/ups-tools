@@ -22,15 +22,26 @@ public enum LinkStatus
     Unreachable,
 }
 
+/// <summary>What the log says, newest first, as the dashboard shows it: the last 100 entries.</summary>
+public sealed class ActivityFeed : ObservableCollection<LogEntry>
+{
+    private const int MaxEntries = 100;
+
+    public void Post(LogEntry entry)
+    {
+        Insert(0, entry);
+        while (Count > MaxEntries) RemoveAt(Count - 1);
+    }
+}
+
+/// <summary>One UPS's readings, as the dashboard shows them.</summary>
 public sealed class DashboardViewModel : ObservableObject
 {
-    private const int MaxActivity = 100;
     private const double IdleThresholdW = 5;
-
-    public ObservableCollection<LogEntry> Activity { get; } = [];
+    private bool? _grid;
 
     public string DeviceTitle { get; private set => Set(ref field, value); } = "No UPS paired";
-    public string DeviceSubtitle { get; private set => Set(ref field, value); } = "Open Configuration → Find UPS to pair one.";
+    public string DeviceSubtitle { get; private set => Set(ref field, value); } = "Open Configuration → Add UPS to pair one.";
     public bool IsPaired { get; private set => Set(ref field, value); }
 
     public LinkStatus Link { get; private set => Set(ref field, value); } = LinkStatus.NotPaired;
@@ -60,21 +71,36 @@ public sealed class DashboardViewModel : ObservableObject
     public string OutputValue { get; private set => Set(ref field, value); } = "—";
     public string OutputDetail { get; private set => Set(ref field, value); } = "";
 
-    public void SetDevice(PairedUps? device, string? serial = null)
+    /// <summary>The tray's colour for this UPS (<see cref="Summary"/> says why).</summary>
+    public TrayState State { get; private set => Set(ref field, value); } = TrayState.Neutral;
+
+    /// <summary>One line about this UPS for the tray, e.g. "Grid online · 80 % · 120 W load".</summary>
+    public string Summary { get; private set => Set(ref field, value); } = "No UPS paired";
+
+    /// <param name="title">What the UPS is called in UPS Tools, if not its brand and model.</param>
+    public void SetDevice(PairedUps? device, string? serial = null, string? title = null)
     {
         IsPaired = device is not null;
         if (device is null)
         {
             DeviceTitle = "No UPS paired";
-            DeviceSubtitle = "Open Configuration → Find UPS to pair one.";
+            DeviceSubtitle = "Open Configuration → Add UPS to pair one.";
             SetLink(LinkStatus.NotPaired);
             ClearReadings();
             return;
         }
 
-        DeviceTitle = device.Title;
-        DeviceSubtitle = serial is null ? device.Address : $"Serial {serial} · {device.Address}";
+        if (serial is not null) _serial = serial;
+        DeviceTitle = title ?? device.Title;
+        DeviceSubtitle = string.Join(" · ", new[]
+        {
+            DeviceTitle == device.Title ? null : device.Title,
+            _serial is null ? null : $"Serial {_serial}",
+            device.Address,
+        }.OfType<string>());
     }
+
+    private string? _serial;
 
     public void SetLink(LinkStatus link)
     {
@@ -89,11 +115,29 @@ public sealed class DashboardViewModel : ObservableObject
             _ => "",
         };
         IsStale = link != LinkStatus.Online;
+        UpdateSummary();
+    }
+
+    private void UpdateSummary()
+    {
+        (State, Summary) = Link switch
+        {
+            LinkStatus.NotPaired => (TrayState.Neutral, "No UPS paired"),
+            LinkStatus.Unreachable => (TrayState.Problem, "UPS unreachable"),
+            LinkStatus.Connecting => (TrayState.Neutral, "Connecting to the UPS…"),
+            _ => _grid switch
+            {
+                false => (TrayState.OnBattery, $"On battery · {BatteryValue} · {RuntimeValue} left"),
+                true => (TrayState.GridOnline, $"Grid online · {BatteryValue} · {OutputValue} load"),
+                null => (TrayState.Neutral, LinkText),
+            },
+        };
     }
 
     public void Apply(UpsStatus s)
     {
         LastUpdated = $"Updated {s.Timestamp.LocalDateTime:HH:mm:ss}";
+        _grid = s.GridPresent;
 
         (GridTone, GridValue, GridDetail) = s.GridPresent switch
         {
@@ -142,17 +186,14 @@ public sealed class DashboardViewModel : ObservableObject
         OutputValue = s.TotalOutputW is { } output ? Watts(output) : "—";
         OutputDetail = $"AC {Watts(s.AcOutputW)} · DC {Watts(s.DcOutputW)}"
                        + (s.AcOutputVoltage is { } ov ? $" · {ov:0.0} V" : "");
-    }
-
-    public void AddActivity(LogEntry entry)
-    {
-        Activity.Insert(0, entry);
-        while (Activity.Count > MaxActivity) Activity.RemoveAt(Activity.Count - 1);
+        UpdateSummary();
     }
 
     private void ClearReadings()
     {
         LastUpdated = "";
+        _grid = null;
+        _serial = null;
         (GridTone, GridValue, GridDetail) = (Tone.Neutral, "—", "");
         (BatteryTone, BatteryPercent, BatteryValue, BatteryDetail) = (Tone.Neutral, 0, "—", "");
         (FlowTone, FlowValue, FlowDetail) = (Tone.Neutral, "—", "");

@@ -30,10 +30,10 @@ public class DashboardViewModelTests
     [Fact]
     public void Starts_unpaired_with_no_readings()
     {
-        Assert.Equal(("No UPS paired", "Open Configuration → Find UPS to pair one.", false), (_vm.DeviceTitle, _vm.DeviceSubtitle, _vm.IsPaired));
+        Assert.Equal(("No UPS paired", "Open Configuration → Add UPS to pair one.", false), (_vm.DeviceTitle, _vm.DeviceSubtitle, _vm.IsPaired));
         Assert.Equal((LinkStatus.NotPaired, "Not paired", true), (_vm.Link, _vm.LinkText, _vm.IsStale));
         Assert.Equal("—", _vm.GridValue);
-        Assert.Empty(_vm.Activity);
+        Assert.Equal((TrayState.Neutral, "No UPS paired"), (_vm.State, _vm.Summary));
     }
 
     [Fact]
@@ -44,6 +44,32 @@ public class DashboardViewModelTests
         Assert.Equal(("Bluetti EL100V2", "0C:4E:A0:E0:81:E6", true), (_vm.DeviceTitle, _vm.DeviceSubtitle, _vm.IsPaired));
         _vm.SetDevice(ups, "2527008220279");
         Assert.Equal("Serial 2527008220279 · 0C:4E:A0:E0:81:E6", _vm.DeviceSubtitle);
+    }
+
+    [Fact]
+    public void A_ups_with_a_name_of_its_own_shows_its_model_under_it()
+    {
+        var ups = new PairedUps("bluetti-ble", "0C:4E:A0:E0:81:E6", "EL100V2…", "EL100V2");
+        _vm.SetDevice(ups, "2527008220279", "Office");
+        Assert.Equal(("Office", "Bluetti EL100V2 · Serial 2527008220279 · 0C:4E:A0:E0:81:E6"), (_vm.DeviceTitle, _vm.DeviceSubtitle));
+        _vm.SetDevice(ups, title: "Desk"); // the serial stays known
+        Assert.Equal(("Desk", "Bluetti EL100V2 · Serial 2527008220279 · 0C:4E:A0:E0:81:E6"), (_vm.DeviceTitle, _vm.DeviceSubtitle));
+    }
+
+    [Fact]
+    public void The_summary_says_what_the_tray_says()
+    {
+        _vm.SetDevice(new PairedUps("x", "a", "n", "EL100V2"));
+        _vm.SetLink(LinkStatus.Connecting);
+        Assert.Equal((TrayState.Neutral, "Connecting to the UPS…"), (_vm.State, _vm.Summary));
+        _vm.SetLink(LinkStatus.Online);
+        _vm.Apply(Status with { GridPresent = false });
+        Assert.Equal(TrayState.OnBattery, _vm.State);
+        Assert.StartsWith("On battery · ", _vm.Summary);
+        _vm.SetLink(LinkStatus.Retrying); // still the last reading
+        Assert.Equal(TrayState.OnBattery, _vm.State);
+        _vm.SetLink(LinkStatus.Unreachable);
+        Assert.Equal((TrayState.Problem, "UPS unreachable"), (_vm.State, _vm.Summary));
     }
 
     [Theory]
@@ -149,10 +175,11 @@ public class DashboardViewModelTests
     [Fact]
     public void Activity_shows_the_newest_hundred_first()
     {
-        for (var i = 0; i < 105; i++) _vm.AddActivity(new LogEntry(DateTime.Now, LogLevel.Info, $"#{i}"));
-        Assert.Equal(100, _vm.Activity.Count);
-        Assert.Equal("#104", _vm.Activity[0].Message);
-        Assert.Equal("#5", _vm.Activity[^1].Message);
+        var activity = new ActivityFeed();
+        for (var i = 0; i < 105; i++) activity.Post(new LogEntry(DateTime.Now, LogLevel.Info, $"#{i}"));
+        Assert.Equal(100, activity.Count);
+        Assert.Equal("#104", activity[0].Message);
+        Assert.Equal("#5", activity[^1].Message);
     }
 
     [Fact]
@@ -162,7 +189,7 @@ public class DashboardViewModelTests
         _vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
         _vm.SetLink(LinkStatus.Online);
         _vm.SetLink(LinkStatus.Online);
-        Assert.Equal(["Link", "LinkText", "IsStale"], changed);
+        Assert.Equal(["Link", "LinkText", "IsStale", "Summary"], changed);
     }
 }
 
@@ -171,16 +198,20 @@ public sealed class ConfigurationViewModelTests : IDisposable
 {
     private readonly TempFolder _folder = new();
     private readonly AppSettings _settings = new();
+    private readonly UpsSettings _ups = new() { Device = new PairedUps("bluetti-ble", "0C:4E:A0:E0:81:E6", "EL100V22527008220279", "EL100V2") };
     private readonly AppLog _log;
     private int _monitorChanges;
     private int _saves;
+    private int _renames;
     private readonly ConfigurationViewModel _vm;
+    private readonly UpsConfigurationViewModel _upsVm;
 
     public ConfigurationViewModelTests()
     {
         StartupRegistration.SetEnabled(false);
         _log = new AppLog(_folder.Path);
         _vm = new ConfigurationViewModel(_settings, _log, () => _saves++, () => _monitorChanges++);
+        _upsVm = new UpsConfigurationViewModel(_ups, () => _saves++, () => _monitorChanges++, () => _renames++);
     }
 
     public void Dispose()
@@ -195,22 +226,33 @@ public sealed class ConfigurationViewModelTests : IDisposable
         Assert.True(_vm.CloseToTray);
         Assert.False(_vm.StartWithWindows);
         Assert.Equal("10", _vm.UpdatePeriod.Text);
-        Assert.Equal(("20", "10", "0", "0"), (_vm.BatteryLowPercent.Text, _vm.BatteryLowMinutes.Text, _vm.GridLostDelay.Text, _vm.UnreachableOnBattery.Text));
+        Assert.Equal(("20", "10", "0", "0"), (_upsVm.BatteryLowPercent.Text, _upsVm.BatteryLowMinutes.Text, _upsVm.GridLostDelay.Text, _upsVm.UnreachableOnBattery.Text));
         Assert.Matches(@"^Version \d+\.\d+\.\d+$", _vm.Version);
-        Assert.Equal(["Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again"], _vm.Notifications.Select(n => n.Title));
+        Assert.Equal(["Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again"], _upsVm.Notifications.Select(n => n.Title));
         Assert.Equal(0, _saves);
     }
 
     [Fact]
-    public void Pairing_is_described()
+    public void The_ups_is_described()
     {
-        Assert.Equal((false, "No UPS paired", "Find your UPS to start monitoring it."), (_vm.IsPaired, _vm.PairedTitle, _vm.PairedDetail));
+        Assert.Equal(("Bluetti EL100V2", "EL100V22527008220279 · 0C:4E:A0:E0:81:E6 · via Bluetooth LE", ""),
+            (_upsVm.DefaultTitle, _upsVm.Detail, _upsVm.Label));
+    }
 
-        _settings.Ups = new PairedUps("bluetti-ble", "0C:4E:A0:E0:81:E6", "EL100V22527008220279", "EL100V2");
-        _vm.RefreshPairing();
+    [Theory]
+    [InlineData(" Office ", "Office")]
+    [InlineData("   ", null)]
+    [InlineData("", null)]
+    public void The_ups_name_is_saved_trimmed(string typed, string? saved)
+    {
+        _ups.Label = "Old";
+        _upsVm.Label = typed;
+        Assert.Equal(saved, _ups.Label);
+        Assert.Equal(saved ?? "", _upsVm.Label);
+        Assert.Equal((1, 1, 0), (_saves, _renames, _monitorChanges));
 
-        Assert.Equal((true, "Bluetti EL100V2", "EL100V22527008220279 · 0C:4E:A0:E0:81:E6 · via Bluetooth LE"),
-            (_vm.IsPaired, _vm.PairedTitle, _vm.PairedDetail));
+        _upsVm.Label = typed; // unchanged
+        Assert.Equal((1, 1), (_saves, _renames));
     }
 
     [Fact]
@@ -274,12 +316,12 @@ public sealed class ConfigurationViewModelTests : IDisposable
     [InlineData("100", 99)]
     public void The_battery_low_charge_applies_clamped(string text, int percent)
     {
-        _vm.BatteryLowPercent.Text = text;
-        Assert.Equal(percent, _settings.BatteryLowPercent);
+        _upsVm.BatteryLowPercent.Text = text;
+        Assert.Equal(percent, _ups.BatteryLowPercent);
         Assert.Equal((1, 1), (_saves, _monitorChanges));
-        _vm.BatteryLowPercent.Normalize();
-        Assert.Equal(percent.ToString(), _vm.BatteryLowPercent.Text);
-        Assert.Equal((0, 99, percent), (_vm.BatteryLowPercent.Min, _vm.BatteryLowPercent.Max, _vm.BatteryLowPercent.Value));
+        _upsVm.BatteryLowPercent.Normalize();
+        Assert.Equal(percent.ToString(), _upsVm.BatteryLowPercent.Text);
+        Assert.Equal((0, 99, percent), (_upsVm.BatteryLowPercent.Min, _upsVm.BatteryLowPercent.Max, _upsVm.BatteryLowPercent.Value));
     }
 
     [Theory]
@@ -288,11 +330,11 @@ public sealed class ConfigurationViewModelTests : IDisposable
     [InlineData("1000", 600)]
     public void The_grid_lost_delay_applies_clamped(string text, int seconds)
     {
-        _vm.GridLostDelay.Text = text;
-        Assert.Equal(seconds, _settings.GridLostDelaySeconds);
+        _upsVm.GridLostDelay.Text = text;
+        Assert.Equal(seconds, _ups.GridLostDelaySeconds);
         Assert.Equal((1, 1), (_saves, _monitorChanges));
-        _vm.GridLostDelay.Normalize();
-        Assert.Equal(seconds.ToString(), _vm.GridLostDelay.Text);
+        _upsVm.GridLostDelay.Normalize();
+        Assert.Equal(seconds.ToString(), _upsVm.GridLostDelay.Text);
     }
 
     [Theory]
@@ -300,8 +342,8 @@ public sealed class ConfigurationViewModelTests : IDisposable
     [InlineData("1000", 600)]
     public void The_unreachable_on_battery_limit_applies_clamped(string text, int minutes)
     {
-        _vm.UnreachableOnBattery.Text = text;
-        Assert.Equal(minutes, _settings.UnreachableOnBatteryMinutes);
+        _upsVm.UnreachableOnBattery.Text = text;
+        Assert.Equal(minutes, _ups.UnreachableOnBatteryMinutes);
         Assert.Equal((1, 1), (_saves, _monitorChanges));
     }
 
@@ -311,27 +353,27 @@ public sealed class ConfigurationViewModelTests : IDisposable
     [InlineData("1000", 600)]
     public void The_battery_low_time_left_applies_clamped(string text, int minutes)
     {
-        _vm.BatteryLowMinutes.Text = text;
-        Assert.Equal(minutes, _settings.BatteryLowMinutes);
+        _upsVm.BatteryLowMinutes.Text = text;
+        Assert.Equal(minutes, _ups.BatteryLowMinutes);
         Assert.Equal((1, 1), (_saves, _monitorChanges));
-        _vm.BatteryLowMinutes.Text = "x";
-        _vm.BatteryLowMinutes.Normalize();
-        Assert.Equal(minutes.ToString(), _vm.BatteryLowMinutes.Text);
+        _upsVm.BatteryLowMinutes.Text = "x";
+        _upsVm.BatteryLowMinutes.Normalize();
+        Assert.Equal(minutes.ToString(), _upsVm.BatteryLowMinutes.Text);
         Assert.Equal(1, _saves);
     }
 
     [Fact]
     public void Notification_switches_save_per_event()
     {
-        var reachable = _vm.Notifications.Single(n => n.Kind == UpsEventKind.UpsReachable);
+        var reachable = _upsVm.Notifications.Single(n => n.Kind == UpsEventKind.UpsReachable);
         var changed = new List<string?>();
         reachable.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
         reachable.IsEnabled = true; // already on
         reachable.IsEnabled = false;
 
-        Assert.False(_settings.NotifyOn(UpsEventKind.UpsReachable));
-        Assert.True(_settings.NotifyOn(UpsEventKind.GridLost));
+        Assert.False(_ups.NotifyOn(UpsEventKind.UpsReachable));
+        Assert.True(_ups.NotifyOn(UpsEventKind.GridLost));
         Assert.Equal(["IsEnabled"], changed);
         Assert.Equal(1, _saves);
     }

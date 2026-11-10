@@ -6,11 +6,37 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- With several UPSes: each at a glance; the one clicked is shown below. -->
+        <ListBox ItemsSource="{Binding Upses}" SelectedItem="{Binding Selected}" Margin="2,0,2,8"
+                 Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 Visibility="{Binding HasSeveral, Converter={StaticResource BoolToVisibility}}"
+                 AutomationProperties.Name="UPSes" AutomationProperties.AutomationId="UpsTiles">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Width="250" Margin="2,4">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Style="{StaticResource StateDot}" Tag="{Binding Dashboard.State}" />
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Dashboard.Summary}" Style="{StaticResource Detail}" Margin="16,2,0,0"
+                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="UpsSummary" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
         <!-- Device header -->
-        <DockPanel Margin="6,0,6,6">
+        <DockPanel Grid.Row="1" Margin="6,0,6,6" DataContext="{Binding Dashboard}">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="{Binding LastUpdated}" AutomationProperties.AutomationId="LastUpdated" Style="{StaticResource Caption}" Margin="0,0,12,0" />
                 <Border Style="{StaticResource LinkPill}" Tag="{Binding Link}">
@@ -28,7 +54,7 @@
         </DockPanel>
 
         <!-- Indicators -->
-        <UniformGrid Grid.Row="1" Columns="3">
+        <UniformGrid Grid.Row="2" Columns="3" DataContext="{Binding Dashboard}">
             <UniformGrid.Style>
                 <Style TargetType="UniformGrid">
                     <Style.Triggers>
@@ -108,7 +134,7 @@
         </UniformGrid>
 
         <!-- Activity -->
-        <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16,14,6,8">
+        <Border Grid.Row="3" Style="{StaticResource Card}" Padding="16,14,6,8">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Recent activity" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
                 <ScrollViewer VerticalScrollBarVisibility="Auto">

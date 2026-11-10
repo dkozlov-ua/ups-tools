@@ -7,19 +7,20 @@ using UpsTools.Views;
 
 namespace UpsTools;
 
-/// <summary>Owns settings, the UPS monitor and the view models; everything here runs on the UI thread.</summary>
-public sealed class AppController
+/// <summary>
+/// Owns the settings, the paired UPSes (<see cref="UpsUnit"/>: each with its monitor, scripts and notifications) and
+/// the view models; everything here runs on the UI thread.
+/// </summary>
+public sealed class AppController : ObservableObject
 {
     private readonly Dispatcher _ui;
     private readonly SettingsStore _store;
     private readonly UpsDrivers _drivers;
     private readonly Func<ScriptAction, string, IReadOnlyDictionary<string, string?>, CancellationToken, Task<StepResult>> _runScript;
     private readonly PowerRunner _power;
-    private UpsMonitor? _monitor;
+    private readonly DashboardViewModel _noUps = new();
     private ITray? _tray;
     private INotifications? _notifier;
-    private DateTimeOffset? _gridLostAt;
-    private readonly Dictionary<UpsEventKind, (ScriptChain Chain, CancellationTokenSource Cancel)> _chains = [];
 
     public AppController(Dispatcher ui) : this(ui, new AppLog())
     {
@@ -49,26 +50,56 @@ public sealed class AppController
             power ?? (drivers is null && SimulatedUpsDriver.FromEnvironment() is null ? new WindowsPower() : new SimulatedPower(Log)),
             countdown ?? CountdownWindow.ShowAsync);
 
-        Dashboard = new DashboardViewModel();
-        foreach (var entry in Log.Recent) Dashboard.AddActivity(entry);
-        Log.EntryAdded += entry => _ui.InvokeAsync(() => Dashboard.AddActivity(entry));
+        foreach (var entry in Log.Recent) Activity.Post(entry);
+        Log.EntryAdded += entry => _ui.InvokeAsync(() => Activity.Post(entry));
 
-        EventScripts = new ObservableCollection<EventScriptsViewModel>(
-            Enum.GetValues<UpsEventKind>().Select(kind => new EventScriptsViewModel(kind, Settings.ScriptsFor(kind), Elevated, Save)));
+        Configuration = new ConfigurationViewModel(Settings, Log, Save, ApplyPeriod);
 
-        Configuration = new ConfigurationViewModel(Settings, Log, Save, ApplyToMonitor);
-
-        Dashboard.SetDevice(Settings.Ups);
+        foreach (var ups in Settings.Upses) Upses.Add(CreateUnit(ups));
+        Upses.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasUps));
+            OnPropertyChanged(nameof(HasSeveral));
+        };
+        RefreshTitles();
+        Selected = Upses.FirstOrDefault();
     }
 
     public AppLog Log { get; }
     public ElevatedTasks Elevated { get; }
     public AppSettings Settings { get; }
     public string SettingsFolder => _store.Folder;
-    public DashboardViewModel Dashboard { get; }
-    public ObservableCollection<EventScriptsViewModel> EventScripts { get; }
-    public ConfigurationViewModel Configuration { get; }
     public IReadOnlyList<IUpsDriver> Drivers => _drivers.All;
+
+    /// <summary>The app-wide settings.</summary>
+    public ConfigurationViewModel Configuration { get; }
+
+    /// <summary>The paired UPSes, in the order they were paired.</summary>
+    public ObservableCollection<UpsUnit> Upses { get; } = [];
+
+    public bool HasUps => Upses.Count > 0;
+
+    /// <summary>More than one UPS is paired: the window shows which one it is about.</summary>
+    public bool HasSeveral => Upses.Count > 1;
+
+    /// <summary>The UPS the dashboard, the scripts and its settings show.</summary>
+    public UpsUnit? Selected
+    {
+        get;
+        set
+        {
+            if (Set(ref field, value)) OnPropertyChanged(nameof(Dashboard));
+        }
+    }
+
+    /// <summary>The selected UPS's readings, or "No UPS paired".</summary>
+    public DashboardViewModel Dashboard => Selected?.Dashboard ?? _noUps;
+
+    /// <summary>What the log says, about every UPS.</summary>
+    public ActivityFeed Activity { get; } = new();
+
+    /// <summary>The EcoFlow user ID a UPS was paired with, to start the next pairing with.</summary>
+    public string? KnownUserId => Upses.Select(u => u.Device.UserId).LastOrDefault(id => id is not null);
 
     public void Save() => _store.Save(Settings);
 
@@ -79,41 +110,68 @@ public sealed class AppController
         UpdateTray();
     }
 
+    private UpsUnit CreateUnit(UpsSettings settings)
+    {
+        UpsUnit unit = null!;
+        unit = new UpsUnit(settings, Elevated, Save, () => ApplyRules(unit), RefreshTitles);
+        return unit;
+    }
+
+    /// <summary>
+    /// Names each UPS (<see cref="UpsUnit.Title"/>): two of the same model without a name of their own are told apart
+    /// by what they call themselves. With several, the log says which one each line is about.
+    /// </summary>
+    private void RefreshTitles()
+    {
+        foreach (var unit in Upses)
+        {
+            var title = unit.Settings.Label ?? unit.Device.Title;
+            if (unit.Settings.Label is null && Upses.Count(u => u.Settings.Label is null && u.Device.Title == unit.Device.Title) > 1)
+                title += $" ({unit.Device.Name})";
+            unit.Title = title;
+            unit.LogPrefix = HasSeveral ? title + ": " : "";
+            unit.Dashboard.SetDevice(unit.Device, title: title);
+        }
+        UpdateTray();
+    }
+
+    /// <summary>Starts monitoring every paired UPS that isn't monitored yet.</summary>
     public void StartMonitoring()
     {
-        if (_monitor is not null) return;
-        if (Settings.Ups is not { } ups)
-        {
-            Dashboard.SetDevice(null);
-            UpdateTray();
-            return;
-        }
+        foreach (var unit in Upses) StartMonitoring(unit);
+        UpdateTray();
+    }
+
+    private void StartMonitoring(UpsUnit unit)
+    {
+        if (unit.Monitor is not null) return;
 
         IUpsConnection connection;
         try
         {
-            var driver = _drivers.Find(ups.DriverId) ?? throw new NotSupportedException($"Unknown UPS driver '{ups.DriverId}'");
-            connection = driver.CreateConnection(ups);
+            var driver = _drivers.Find(unit.Device.DriverId) ?? throw new NotSupportedException($"Unknown UPS driver '{unit.Device.DriverId}'");
+            connection = driver.CreateConnection(unit.Device);
         }
         catch (Exception ex)
         {
-            Log.Warn($"Cannot monitor {ups.Name}: {ex.Message}");
+            Log.Warn($"Cannot monitor {unit.Device.Name}: {ex.Message}");
+            unit.Dashboard.SetLink(LinkStatus.Unreachable);
             return;
         }
 
-        var monitor = new UpsMonitor(connection, TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds)) { Rules = Settings.Rules() };
-        monitor.Log += Log.Info;
+        var monitor = new UpsMonitor(connection, TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds)) { Rules = unit.Settings.Rules() };
+        monitor.Log += message => Log.Info(unit.LogPrefix + message);
         monitor.StatusUpdated += status => _ui.InvokeAsync(() =>
         {
-            if (_monitor != monitor) return;
-            Dashboard.SetDevice(Settings.Ups, status.Serial);
-            Dashboard.Apply(status);
+            if (unit.Monitor != monitor) return;
+            unit.Dashboard.SetDevice(unit.Device, status.Serial, unit.Title);
+            unit.Dashboard.Apply(status);
             UpdateTray();
         });
         monitor.LinkStateChanged += state => _ui.InvokeAsync(() =>
         {
-            if (_monitor != monitor) return;
-            Dashboard.SetLink(state switch
+            if (unit.Monitor != monitor) return;
+            unit.Dashboard.SetLink(state switch
             {
                 UpsLinkState.Online => LinkStatus.Online,
                 UpsLinkState.Retrying => LinkStatus.Retrying,
@@ -124,92 +182,128 @@ public sealed class AppController
         });
         monitor.EventRaised += e => _ui.InvokeAsync(() =>
         {
-            if (_monitor == monitor) OnUpsEvent(e.Kind, e.Status, e.GridGoneSince);
+            if (unit.Monitor == monitor) OnUpsEvent(unit, e.Kind, e.Status, e.GridGoneSince);
         });
 
-        _monitor = monitor;
-        Dashboard.SetDevice(ups);
-        Dashboard.SetLink(LinkStatus.Connecting);
-        UpdateTray();
+        unit.Monitor = monitor;
+        unit.Dashboard.SetLink(LinkStatus.Connecting);
         monitor.Start();
     }
 
-    /// <summary>Applies the settings the monitor uses: its period and the events' limits.</summary>
-    private void ApplyToMonitor()
+    /// <summary>Applies the poll period to every monitor.</summary>
+    private void ApplyPeriod()
     {
-        if (_monitor is null) return;
         var period = TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds);
-        if (_monitor.Period != period) _monitor.Period = period;
-        _monitor.Rules = Settings.Rules();
+        foreach (var monitor in Upses.Select(u => u.Monitor).OfType<UpsMonitor>())
+            if (monitor.Period != period) monitor.Period = period;
     }
 
-    public async Task StopMonitoringAsync()
+    /// <summary>Applies a UPS's event limits to its monitor.</summary>
+    private static void ApplyRules(UpsUnit unit)
     {
-        var monitor = _monitor;
-        _monitor = null;
-        _gridLostAt = null;
+        if (unit.Monitor is { } monitor) monitor.Rules = unit.Settings.Rules();
+    }
+
+    /// <summary>Stops monitoring every UPS.</summary>
+    public Task StopMonitoringAsync() => Task.WhenAll(Upses.ToList().Select(StopMonitoringAsync));
+
+    private static async Task StopMonitoringAsync(UpsUnit unit)
+    {
+        var monitor = unit.Monitor;
+        unit.Monitor = null;
+        unit.GridLostAt = null;
         if (monitor is not null) await monitor.DisposeAsync();
     }
 
-    /// <summary>Call with monitoring stopped (the pairing dialog needs the Bluetooth link to itself).</summary>
-    public void Pair(PairedUps ups)
+    /// <summary>
+    /// Adds a UPS, or updates the one already paired at that address (e.g. with another user ID), and starts
+    /// monitoring. Call with monitoring stopped (the pairing dialog needs the Bluetooth link to itself).
+    /// </summary>
+    public UpsUnit Pair(PairedUps ups)
     {
-        Settings.Ups = ups;
+        var unit = Upses.FirstOrDefault(u => u.Device.DriverId == ups.DriverId && u.Device.Address == ups.Address);
+        if (unit is null)
+        {
+            var settings = new UpsSettings { Device = ups };
+            Settings.Upses.Add(settings);
+            unit = CreateUnit(settings);
+            Upses.Add(unit);
+            Log.Info($"Paired with {ups.Name} ({ups.Address})");
+        }
+        else
+        {
+            unit.Settings.Device = ups;
+            unit.Configuration.RefreshDevice();
+            Log.Info($"Paired with {ups.Name} ({ups.Address}) again");
+        }
         Save();
-        Configuration.RefreshPairing();
-        Log.Info($"Paired with {ups.Name} ({ups.Address})");
+        RefreshTitles();
+        Selected = unit;
         StartMonitoring();
+        return unit;
     }
 
-    public async Task ForgetAsync()
+    /// <summary>
+    /// Stops monitoring <paramref name="unit"/> and forgets it with its scripts; scripts of it set to run as
+    /// administrator have their tasks deleted, which may show an administrator prompt.
+    /// </summary>
+    public async Task ForgetAsync(UpsUnit unit)
     {
-        await StopMonitoringAsync();
-        var old = Settings.Ups;
-        Settings.Ups = null;
+        await StopMonitoringAsync(unit);
+        foreach (var (_, cancel) in unit.Chains.Values) cancel.Cancel();
+        unit.Chains.Clear();
+        foreach (var action in unit.Settings.Scripts.Values.SelectMany(list => list).Where(a => a.RunElevated))
+            await Elevated.UnregisterAsync(action); // a task left behind goes with the uninstaller
+
+        Settings.Upses.Remove(unit.Settings);
+        Upses.Remove(unit);
         Save();
-        Configuration.RefreshPairing();
-        Dashboard.SetDevice(null);
-        UpdateTray();
-        if (old is not null) Log.Info($"Forgot {old.Name}");
+        if (Selected == unit) Selected = Upses.FirstOrDefault();
+        Log.Info($"Forgot {unit.Device.Name}");
+        RefreshTitles();
     }
 
     /// <summary>"Run now" on an event: its enabled scripts, as if the event had fired, without the notification.</summary>
-    public void RunScripts(EventScriptsViewModel group, string reason) =>
-        StartChain(group.Kind, group.EnabledActions.ToList(), reason, Variables(group.Kind, manual: true),
-            finished: (c, _) => NotifyProblems(c, "Manual run"));
+    public void RunScripts(EventScriptsViewModel group, string reason)
+    {
+        var unit = Upses.First(u => u.EventScripts.Contains(group));
+        StartChain(unit, group.Kind, group.EnabledActions.ToList(), unit.LogPrefix + reason, Variables(unit, group.Kind, manual: true),
+            finished: (c, _) => NotifyProblems(unit, c, "Manual run"));
+    }
 
     /// <summary>"Run now" on one script.</summary>
     public void RunScript(ScriptAction action, string reason)
     {
-        var kind = EventScripts.FirstOrDefault(g => g.Items.Any(i => i.Model == action))?.Kind;
-        StartChain(null, [action], reason, Variables(kind, manual: true), finished: (c, _) => NotifyProblems(c, "Manual run"));
+        var unit = Upses.First(u => u.GroupOf(action) is not null);
+        StartChain(unit, null, [action], unit.LogPrefix + reason, Variables(unit, unit.GroupOf(action)!.Kind, manual: true),
+            finished: (c, _) => NotifyProblems(unit, c, "Manual run"));
     }
 
     /// <summary>What the scripts of <paramref name="kind"/> are told about the UPS (<see cref="ScriptEnvironment"/>).</summary>
-    private IReadOnlyDictionary<string, string?> Variables(UpsEventKind? kind, bool manual, UpsStatus? status = null,
+    private static IReadOnlyDictionary<string, string?> Variables(UpsUnit unit, UpsEventKind? kind, bool manual, UpsStatus? status = null,
         TimeSpan? outage = null) =>
-        ScriptEnvironment.For(kind, status ?? _monitor?.LastStatus,
-            reachable: _monitor is null ? null : _monitor.LinkState != UpsLinkState.Unreachable && kind != UpsEventKind.UpsUnreachable,
-            outage ?? (_gridLostAt is { } lost ? (status?.Timestamp ?? DateTimeOffset.Now) - lost : null), manual);
+        ScriptEnvironment.For(kind, status ?? unit.Monitor?.LastStatus,
+            reachable: unit.Monitor is null ? null : unit.Monitor.LinkState != UpsLinkState.Unreachable && kind != UpsEventKind.UpsUnreachable,
+            outage ?? (unit.GridLostAt is { } lost ? (status?.Timestamp ?? DateTimeOffset.Now) - lost : null), manual, unit.Title);
 
     /// <summary>
     /// Starts <paramref name="actions"/> in order (see <see cref="ScriptChain"/>) and returns the chain as it
     /// stands once it is waiting for a script or done. For an event (<paramref name="kind"/>), the chain
-    /// replaces one of the same event that is still running, and the opposite event can stop it.
+    /// replaces one of the same event of the same UPS that is still running, and the opposite event can stop it.
     /// </summary>
     /// <param name="finished">Called when the chain is done; the flag says whether it had to wait for a script.</param>
-    private ScriptChain StartChain(UpsEventKind? kind, IReadOnlyList<ScriptAction> actions, string reason,
+    private ScriptChain StartChain(UpsUnit unit, UpsEventKind? kind, IReadOnlyList<ScriptAction> actions, string reason,
         IReadOnlyDictionary<string, string?> environment, Action<ScriptChain, bool> finished)
     {
         if (actions.Count == 0) Log.Info($"{reason}: no scripts to run");
-        if (kind is { } k) StopChain(k, $"{reason} started again");
+        if (kind is { } k) StopChain(unit, k, $"{reason} started again");
 
         // A built-in action is waited for (its countdown, and sleep until the PC wakes up), and stopping the chain stops its countdown.
         var chain = new ScriptChain([.. actions.Select(a => new ScriptStep(a.Name, a.WaitForExit || a.Power is not null,
             UndoneByStopping: a.Power is not null,
             TimeLimit: a.Power is null && a.WaitForExit && a.WaitLimitMinutes > 0 ? a.WaitLimitMinutes * WaitLimitUnit : null))]);
         var cancel = new CancellationTokenSource();
-        if (kind is { } key) _chains[key] = (chain, cancel);
+        if (kind is { } key) unit.Chains[key] = (chain, cancel);
 
         var run = chain.RunAsync((i, _, ct) =>
                 actions[i].Power is null ? _runScript(actions[i], reason, environment, ct) : _power.RunAsync(actions[i], reason, ct),
@@ -224,7 +318,7 @@ public sealed class AppController
             try { await run; }
             finally
             {
-                if (kind is { } key && _chains.TryGetValue(key, out var current) && current.Chain == chain) _chains.Remove(key);
+                if (kind is { } key && unit.Chains.TryGetValue(key, out var current) && current.Chain == chain) unit.Chains.Remove(key);
                 cancel.Dispose();
             }
 
@@ -234,11 +328,11 @@ public sealed class AppController
         }
     }
 
-    /// <summary>Stops a running chain of <paramref name="kind"/>: it starts no more scripts.</summary>
+    /// <summary>Stops a running chain of <paramref name="kind"/> of <paramref name="unit"/>: it starts no more scripts.</summary>
     /// <returns>The scripts it won't run, or null when none of that event was running.</returns>
-    private IReadOnlyList<string>? StopChain(UpsEventKind kind, string why)
+    private IReadOnlyList<string>? StopChain(UpsUnit unit, UpsEventKind kind, string why)
     {
-        if (!_chains.Remove(kind, out var running) || running.Chain.Done) return null;
+        if (!unit.Chains.Remove(kind, out var running) || running.Chain.Done) return null;
         var skipped = running.Chain.Unstarted;
         running.Cancel.Cancel();
         Log.Info(skipped.Count > 0
@@ -247,111 +341,113 @@ public sealed class AppController
         return skipped;
     }
 
-    private void NotifyProblems(ScriptChain chain, string label)
+    private void NotifyProblems(UpsUnit unit, ScriptChain chain, string label)
     {
         if (ScriptReport.Problems(chain, label) is { } problem)
-            _notifier?.Show("scripts", TrayState.Problem, problem.Title, problem.Body, attribution: DeviceTitle, important: true);
+            _notifier?.Show(Notifier.TagOf("scripts", unit.Source), TrayState.Problem, problem.Title, problem.Body,
+                attribution: unit.Title, important: true);
     }
 
     public void SendTestNotification()
     {
         _notifier?.Show("test", TrayState.GridOnline, "Test notification",
-            "This is how UPS Tools tells you that the grid went down or came back.", attribution: DeviceTitle);
+            "This is how UPS Tools tells you that the grid went down or came back.", attribution: Selected?.Title);
         Log.Info("Sent a test notification");
     }
-
-    private string? DeviceTitle => Settings.Ups?.Title;
 
     /// <summary>What one of <see cref="ScriptAction.WaitLimitMinutes"/> is: a minute, unless a test says otherwise.</summary>
     internal static TimeSpan WaitLimitUnit { get; set; } = TimeSpan.FromMinutes(1);
 
-    /// <summary>The running monitor, if any (for the tests).</summary>
-    internal UpsMonitor? Monitor => _monitor;
+    private IEnumerable<UpsMonitor> Monitors => Upses.Select(u => u.Monitor).OfType<UpsMonitor>();
 
-    /// <summary>The PC is about to sleep: close the link now, waiting a few seconds at most (Windows won't wait longer).</summary>
+    private string TheUpses => HasSeveral ? "the UPSes" : "the UPS";
+
+    /// <summary>The PC is about to sleep: close the links now, waiting a few seconds at most (Windows won't wait longer).</summary>
     public void OnGoingToSleep()
     {
-        if (_monitor is not { } monitor) return;
-        Log.Info("PC is going to sleep; disconnecting from the UPS");
+        var monitors = Monitors.ToList();
+        if (monitors.Count == 0) return;
+        Log.Info($"PC is going to sleep; disconnecting from {TheUpses}");
         try
         {
             // Off this thread, so the wait can't hold up the continuations it waits for.
-            if (!Task.Run(monitor.NotifySuspendingAsync).Wait(TimeSpan.FromSeconds(3)))
-                Log.Info("The UPS link did not close in time before sleep");
+            if (!Task.Run(() => Task.WhenAll(monitors.Select(m => m.NotifySuspendingAsync()))).Wait(TimeSpan.FromSeconds(3)))
+                Log.Info($"The link to {TheUpses} did not close in time before sleep");
         }
         catch (Exception ex)
         {
-            Log.Info($"Closing the UPS link before sleep failed: {ex.GetBaseException().Message}");
+            Log.Info($"Closing the link to {TheUpses} before sleep failed: {ex.GetBaseException().Message}");
         }
     }
 
     public void OnResumedFromSleep()
     {
-        Log.Info($"PC resumed from sleep; reconnecting to the UPS in {UpsMonitor.DefaultResumeSettle.TotalSeconds:0} s");
-        _monitor?.NotifyResumed();
+        Log.Info($"PC resumed from sleep; reconnecting to {TheUpses} in {UpsMonitor.DefaultResumeSettle.TotalSeconds:0} s");
+        foreach (var monitor in Monitors) monitor.NotifyResumed();
     }
 
     /// <param name="gridGoneSince">For "Grid lost": when the grid went, if earlier than the reading (a delay was waited out).</param>
-    internal void OnUpsEvent(UpsEventKind kind, UpsStatus? status, DateTimeOffset? gridGoneSince = null)
+    internal void OnUpsEvent(UpsUnit unit, UpsEventKind kind, UpsStatus? status, DateTimeOffset? gridGoneSince = null)
     {
-        Log.Event(kind.Title());
+        var reason = unit.LogPrefix + kind.Title();
+        Log.Event(reason);
 
         TimeSpan? outage = null;
         var at = status?.Timestamp ?? DateTimeOffset.Now;
         if (kind == UpsEventKind.GridLost)
         {
-            _gridLostAt = gridGoneSince ?? at;
+            unit.GridLostAt = gridGoneSince ?? at;
         }
         else if (kind == UpsEventKind.GridRestored)
         {
-            if (_gridLostAt is { } lost) outage = at - lost;
-            _gridLostAt = null;
+            if (unit.GridLostAt is { } lost) outage = at - lost;
+            unit.GridLostAt = null;
         }
 
         // The grid came back (or the UPS answers again): what was queued for the earlier state mustn't run now.
         var stopped = new List<(UpsEventKind, IReadOnlyList<string>)>();
         foreach (var other in kind.Stops())
-            if (StopChain(other, kind.Title()) is { } skipped) stopped.Add((other, skipped));
+            if (StopChain(unit, other, reason) is { } skipped) stopped.Add((other, skipped));
 
-        var notify = Settings.NotifyOn(kind);
-        var chain = StartChain(kind, EventScripts.First(g => g.Kind == kind).EnabledActions.ToList(), kind.Title(),
-            Variables(kind, manual: false, status, outage),
+        var notify = unit.Settings.NotifyOn(kind);
+        var chain = StartChain(unit, kind, unit.EventScripts.First(g => g.Kind == kind).EnabledActions.ToList(), reason,
+            Variables(unit, kind, manual: false, status, outage),
             // Problems found before the notification below went out are in it already.
-            finished: (c, waited) => { if (waited && notify) NotifyProblems(c, kind.Title()); });
+            finished: (c, waited) => { if (waited && notify) NotifyProblems(unit, c, kind.Title()); });
 
         // "UPS unreachable" comes without a reading; the last good one says when the UPS last answered.
         if (notify)
-            _notifier?.Show(UpsNotice.For(kind, status ?? _monitor?.LastStatus, outage, chain, stopped,
-                unreachable: kind == UpsEventKind.BatteryLow && status is null), DeviceTitle);
+            _notifier?.Show(UpsNotice.For(kind, status ?? unit.Monitor?.LastStatus, outage, chain, stopped,
+                unreachable: kind == UpsEventKind.BatteryLow && status is null), unit.Title, unit.Source);
     }
 
+    private static int Severity(TrayState state) => state switch
+    {
+        TrayState.Problem => 3,
+        TrayState.OnBattery => 2,
+        TrayState.Neutral => 1,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// The tray icon takes the colour of the UPS that needs attention most; with several, its tooltip has a line
+    /// for each.
+    /// </summary>
     private void UpdateTray()
     {
         if (_tray is null) return;
-
-        if (Settings.Ups is null)
+        switch (Upses.Count)
         {
-            _tray.Update(TrayState.Neutral, "No UPS paired");
-            return;
-        }
-
-        var d = Dashboard;
-        switch (d.Link)
-        {
-            case LinkStatus.Unreachable:
-                _tray.Update(TrayState.Problem, "UPS unreachable");
+            case 0:
+                _tray.Update(TrayState.Neutral, "No UPS paired");
                 return;
-            case LinkStatus.Connecting:
-                _tray.Update(TrayState.Neutral, "Connecting to the UPS…");
+            case 1:
+                _tray.Update(Upses[0].Dashboard.State, Upses[0].Dashboard.Summary);
+                return;
+            default:
+                _tray.Update(Upses.Select(u => u.Dashboard.State).MaxBy(Severity),
+                    string.Join("\n", Upses.Select(u => $"{u.Title}: {u.Dashboard.Summary}")));
                 return;
         }
-
-        var status = _monitor?.LastStatus;
-        if (status?.GridPresent == false)
-            _tray.Update(TrayState.OnBattery, $"On battery · {d.BatteryValue} · {d.RuntimeValue} left");
-        else if (status?.GridPresent == true)
-            _tray.Update(TrayState.GridOnline, $"Grid online · {d.BatteryValue} · {d.OutputValue} load");
-        else
-            _tray.Update(TrayState.Neutral, d.LinkText);
     }
 }

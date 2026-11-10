@@ -2,31 +2,53 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="10,14,10,12" DataContext="{Binding Configuration}">
+        <StackPanel Margin="10,14,10,12">
             <TextBlock Text="Configuration" Style="{StaticResource PageTitle}" Margin="6,0,6,6" />
 
-            <!-- UPS pairing -->
+            <!-- The paired UPSes -->
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <DockPanel>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Content="Forget" Click="Forget_Click" Margin="0,0,8,0"
-                                    Visibility="{Binding IsPaired, Converter={StaticResource BoolToVisibility}}" />
-                            <Button Content="Find UPS…" Click="FindUps_Click" Style="{DynamicResource AccentButtonStyle}" />
-                        </StackPanel>
+                        <Button DockPanel.Dock="Right" Content="Add UPS…" Click="AddUps_Click" Style="{DynamicResource AccentButtonStyle}"
+                                VerticalAlignment="Top" />
+                        <TextBlock Text="UPSes" Style="{StaticResource CardTitle}" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource Detail}" Margin="0,2,0,0"
+                               Text="Each UPS is monitored at the same time as the others, with its own scripts, event limits and notifications." />
+
+                    <DockPanel Margin="0,12,0,0" Visibility="{Binding HasUps, Converter={StaticResource InverseBoolToVisibility}}">
                         <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" FontSize="22" Margin="2,0,14,0" Text="&#xE702;" />
                         <StackPanel>
-                            <TextBlock Text="{Binding PairedTitle}" Style="{StaticResource CardTitle}" AutomationProperties.AutomationId="PairedTitle" />
-                            <TextBlock Text="{Binding PairedDetail}" Style="{StaticResource Detail}" Margin="0,2,0,0" AutomationProperties.AutomationId="PairedDetail" />
+                            <TextBlock Text="No UPS paired" Style="{StaticResource CardTitle}" AutomationProperties.AutomationId="PairedTitle" />
+                            <TextBlock Text="Add your UPS to start monitoring it." Style="{StaticResource Detail}" Margin="0,2,0,0"
+                                       AutomationProperties.AutomationId="PairedDetail" />
                         </StackPanel>
                     </DockPanel>
-                    <TextBlock Style="{StaticResource Detail}" Margin="0,10,0,0"
-                               Text="The UPS accepts one Bluetooth connection at a time. While UPS Tools is connected, the Bluetti phone app can only reach the UPS over Wi-Fi." />
+
+                    <ItemsControl ItemsSource="{Binding Upses}" AutomationProperties.AutomationId="PairedUpses">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,12,0,0">
+                                    <Button DockPanel.Dock="Right" Content="Forget" Click="Forget_Click" VerticalAlignment="Center"
+                                            AutomationProperties.Name="{Binding Title, StringFormat=Forget {0}}" />
+                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" FontSize="22" Margin="2,0,14,0" Text="&#xE702;" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Title}" Style="{StaticResource CardTitle}" AutomationProperties.AutomationId="PairedTitle" />
+                                        <TextBlock Text="{Binding Configuration.Detail}" Style="{StaticResource Detail}" Margin="0,2,0,0"
+                                                   AutomationProperties.AutomationId="PairedDetail" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Style="{StaticResource Detail}" Margin="0,12,0,0"
+                               Text="A UPS accepts one Bluetooth connection at a time. While UPS Tools is connected to it, its phone app can only reach it over Wi-Fi." />
                 </StackPanel>
             </Border>
 
             <!-- Behaviour -->
-            <Border Style="{StaticResource Card}">
+            <Border Style="{StaticResource Card}" DataContext="{Binding Configuration}">
                 <StackPanel>
                     <TextBlock Text="General" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
 
@@ -54,7 +76,7 @@
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="UPS update period" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                             <TextBlock Style="{StaticResource Detail}"
-                                       Text="How often the UPS is polled (2–600 seconds). &quot;UPS unreachable&quot; fires after 3 failed polls in a row." />
+                                       Text="How often each UPS is polled (2–600 seconds). &quot;UPS unreachable&quot; fires after 3 failed polls in a row." />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                             <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="UPS update period in seconds"
@@ -66,108 +88,134 @@
                 </StackPanel>
             </Border>
 
-            <!-- When events fire -->
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <TextBlock Text="Events" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
+            <!-- The selected UPS's own settings -->
+            <StackPanel DataContext="{Binding Selected}" Visibility="{Binding DataContext.HasUps, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Style="{StaticResource PageTitle}" FontSize="17" Margin="6,14,6,0" Text="{Binding Title}"
+                           AutomationProperties.AutomationId="UpsSettingsTitle" />
+                <TextBlock Style="{StaticResource Detail}" Margin="6,2,6,6"
+                           Text="The settings of this UPS. With several, pick the UPS at the top right." />
 
+                <Border Style="{StaticResource Card}" DataContext="{Binding Configuration}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Wait before &quot;Grid lost&quot;" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                            <TextBlock Style="{StaticResource Detail}"
-                                       Text="The grid must stay gone this long (0–600 seconds): a shorter blip runs no scripts and is only logged. 0 fires at the first reading without it." />
+                            <TextBlock Text="Name" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <TextBlock Style="{StaticResource Detail}">
+                                <Run Text="What notifications, the tray and the log call it; empty: its model," />
+                                <Run Text="{Binding DefaultTitle, Mode=OneWay}" /><Run Text="." />
+                            </TextBlock>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                            <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Wait before Grid lost in seconds"
-                                     Text="{Binding GridLostDelay.Text, UpdateSourceTrigger=PropertyChanged}"
-                                     Tag="{Binding GridLostDelay}" LostFocus="Number_LostFocus" />
-                            <TextBlock Text="seconds" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
-                        </StackPanel>
-
-                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource Detail}" Margin="0,16,0,0"
-                                   Text="&quot;Battery low&quot; fires once per outage, when the UPS runs on battery and either limit below is reached, e.g. to hibernate the PC in time. 0 turns a limit off." />
-
-                        <StackPanel Grid.Row="2" VerticalAlignment="Center" Margin="0,10,0,0">
-                            <TextBlock Text="Battery charge" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                            <TextBlock Style="{StaticResource Detail}" Text="At or below this level (0–99 %)." />
-                        </StackPanel>
-                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,10,0,0">
-                            <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low at this charge in percent"
-                                     Text="{Binding BatteryLowPercent.Text, UpdateSourceTrigger=PropertyChanged}"
-                                     Tag="{Binding BatteryLowPercent}" LostFocus="Number_LostFocus" />
-                            <TextBlock Text="%" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="3" VerticalAlignment="Center" Margin="0,12,0,0">
-                            <TextBlock Text="Time left" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                            <TextBlock Style="{StaticResource Detail}"
-                                       Text="At or below this many minutes at the current load (0–600), in two readings in a row, so a short spike in load doesn't count." />
-                        </StackPanel>
-                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,12,0,0">
-                            <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low at this time left in minutes"
-                                     Text="{Binding BatteryLowMinutes.Text, UpdateSourceTrigger=PropertyChanged}"
-                                     Tag="{Binding BatteryLowMinutes}" LostFocus="Number_LostFocus" />
-                            <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="4" VerticalAlignment="Center" Margin="0,12,0,0">
-                            <TextBlock Text="Unreachable on battery" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                            <TextBlock Style="{StaticResource Detail}"
-                                       Text="When the UPS stops answering while on battery, its charge can't be known: count it as low after this many minutes (0–600; 0: never)." />
-                        </StackPanel>
-                        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,12,0,0">
-                            <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low after this many minutes unreachable on battery"
-                                     Text="{Binding UnreachableOnBattery.Text, UpdateSourceTrigger=PropertyChanged}"
-                                     Tag="{Binding UnreachableOnBattery}" LostFocus="Number_LostFocus" />
-                            <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
-                        </StackPanel>
+                        <TextBox Grid.Column="1" Width="220" Margin="16,0,0,0" VerticalAlignment="Center" AutomationProperties.Name="UPS name"
+                                 Text="{Binding Label, UpdateSourceTrigger=LostFocus}" KeyDown="Name_KeyDown" />
                     </Grid>
-                </StackPanel>
-            </Border>
+                </Border>
 
-            <!-- Notifications -->
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <TextBlock Text="Notifications" Style="{StaticResource CardTitle}" />
-                    <TextBlock Style="{StaticResource Detail}" Margin="0,2,0,10"
-                               Text="Show a Windows notification when these events happen. A newer notification replaces the older one about the same thing: &quot;Grid restored&quot; replaces &quot;Grid lost&quot;." />
+                <!-- When events fire -->
+                <Border Style="{StaticResource Card}" DataContext="{Binding Configuration}">
+                    <StackPanel>
+                        <TextBlock Text="Events" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
 
-                    <ItemsControl ItemsSource="{Binding Notifications}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="2" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsEnabled}" Content="{Binding Title}" Margin="0,0,12,6" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                    <WrapPanel Margin="0,8,0,0">
-                        <Button Content="Send test notification" Click="TestNotification_Click" Margin="0,0,8,0" />
-                        <Button Content="Windows notification settings" Click="WindowsNotificationSettings_Click" />
-                    </WrapPanel>
-                    <TextBlock Style="{StaticResource Detail}" Margin="0,8,0,0"
-                               Text="Windows decides whether they pop up: Do not disturb, focus sessions and the per-app switch for UPS Tools in Windows notification settings can hide them." />
-                </StackPanel>
-            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Wait before &quot;Grid lost&quot;" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Style="{StaticResource Detail}"
+                                           Text="The grid must stay gone this long (0–600 seconds): a shorter blip runs no scripts and is only logged. 0 fires at the first reading without it." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Wait before Grid lost in seconds"
+                                         Text="{Binding GridLostDelay.Text, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="{Binding GridLostDelay}" LostFocus="Number_LostFocus" />
+                                <TextBlock Text="seconds" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource Detail}" Margin="0,16,0,0"
+                                       Text="&quot;Battery low&quot; fires once per outage, when the UPS runs on battery and either limit below is reached, e.g. to hibernate the PC in time. 0 turns a limit off." />
+
+                            <StackPanel Grid.Row="2" VerticalAlignment="Center" Margin="0,10,0,0">
+                                <TextBlock Text="Battery charge" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Style="{StaticResource Detail}" Text="At or below this level (0–99 %)." />
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,10,0,0">
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low at this charge in percent"
+                                         Text="{Binding BatteryLowPercent.Text, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="{Binding BatteryLowPercent}" LostFocus="Number_LostFocus" />
+                                <TextBlock Text="%" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="3" VerticalAlignment="Center" Margin="0,12,0,0">
+                                <TextBlock Text="Time left" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Style="{StaticResource Detail}"
+                                           Text="At or below this many minutes at the current load (0–600), in two readings in a row, so a short spike in load doesn't count." />
+                            </StackPanel>
+                            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,12,0,0">
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low at this time left in minutes"
+                                         Text="{Binding BatteryLowMinutes.Text, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="{Binding BatteryLowMinutes}" LostFocus="Number_LostFocus" />
+                                <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="4" VerticalAlignment="Center" Margin="0,12,0,0">
+                                <TextBlock Text="Unreachable on battery" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Style="{StaticResource Detail}"
+                                           Text="When the UPS stops answering while on battery, its charge can't be known: count it as low after this many minutes (0–600; 0: never)." />
+                            </StackPanel>
+                            <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,12,0,0">
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low after this many minutes unreachable on battery"
+                                         Text="{Binding UnreachableOnBattery.Text, UpdateSourceTrigger=PropertyChanged}"
+                                         Tag="{Binding UnreachableOnBattery}" LostFocus="Number_LostFocus" />
+                                <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Notifications -->
+                <Border Style="{StaticResource Card}" DataContext="{Binding Configuration}">
+                    <StackPanel>
+                        <TextBlock Text="Notifications" Style="{StaticResource CardTitle}" />
+                        <TextBlock Style="{StaticResource Detail}" Margin="0,2,0,10"
+                                   Text="Show a Windows notification when these events happen. A newer notification replaces the older one about the same thing: &quot;Grid restored&quot; replaces &quot;Grid lost&quot;." />
+
+                        <ItemsControl ItemsSource="{Binding Notifications}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="2" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsEnabled}" Content="{Binding Title}" Margin="0,0,12,6" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button Content="Send test notification" Click="TestNotification_Click" Margin="0,0,8,0" />
+                            <Button Content="Windows notification settings" Click="WindowsNotificationSettings_Click" />
+                        </WrapPanel>
+                        <TextBlock Style="{StaticResource Detail}" Margin="0,8,0,0"
+                                   Text="Windows decides whether they pop up: Do not disturb, focus sessions and the per-app switch for UPS Tools in Windows notification settings can hide them." />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
 
             <!-- About -->
-            <Border Style="{StaticResource Card}">
+            <Border Style="{StaticResource Card}" DataContext="{Binding Configuration}">
                 <DockPanel>
                     <Image DockPanel.Dock="Left" Source="/Assets/app.ico" Width="40" Height="40" Margin="0,0,14,0" VerticalAlignment="Top" />
                     <StackPanel>

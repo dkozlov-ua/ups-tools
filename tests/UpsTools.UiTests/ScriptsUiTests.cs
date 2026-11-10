@@ -28,7 +28,7 @@ public sealed class ScriptsUiTests : IDisposable
     }
 
     private IReadOnlyList<string> Saved(string kind) =>
-        _app.Settings()["Scripts"]![kind]!.AsArray().Select(s => Path.GetFileName((string)s!["Path"]!)).ToList();
+        _app.Ups()["Scripts"]![kind]!.AsArray().Select(s => Path.GetFileName((string)s!["Path"]!)).ToList();
 
     private void SavedOrder(string kind, params string[] names) =>
         Ui.Until(() => Saved(kind).SequenceEqual(names), $"{kind} to be saved as {string.Join(", ", names)}; it is {string.Join(", ", Saved(kind))}");
@@ -46,7 +46,7 @@ public sealed class ScriptsUiTests : IDisposable
         Assert.Equal("0", limit.Value());
         limit.SetFocus();
         limit.SetValue("15");
-        Ui.Until(() => (int?)_app.Settings()["Scripts"]!["GridLost"]![0]!["WaitLimitMinutes"] == 15, "the limit to be saved");
+        Ui.Until(() => (int?)_app.Ups()["Scripts"]!["GridLost"]![0]!["WaitLimitMinutes"] == 15, "the limit to be saved");
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class ScriptsUiTests : IDisposable
         window.ByName("Enable pause games.ps1");
         Assert.Equal(["pause games.ps1"], Shown(window));
         SavedOrder("GridLost", "pause games.ps1");
-        var saved = _app.Settings()["Scripts"]!["GridLost"]![0]!;
+        var saved = _app.Ups()["Scripts"]!["GridLost"]![0]!;
         Assert.Equal(script, (string)saved["Path"]!);
         Assert.True((bool)saved["Enabled"]!);
         Assert.False((bool)saved["WaitForExit"]!);
@@ -91,16 +91,16 @@ public sealed class ScriptsUiTests : IDisposable
         var window = StartWith(("GridLost", "a.ps1", false));
 
         window.ByName("Enable a.ps1").SetChecked(false);
-        Ui.Until(() => !(bool)_app.Settings()["Scripts"]!["GridLost"]![0]!["Enabled"]!, "Enabled to be saved");
+        Ui.Until(() => !(bool)_app.Ups()["Scripts"]!["GridLost"]![0]!["Enabled"]!, "Enabled to be saved");
 
         window.ByName("Wait until a.ps1 finishes").SetChecked(true);
-        Ui.Until(() => (bool)_app.Settings()["Scripts"]!["GridLost"]![0]!["WaitForExit"]!, "WaitForExit to be saved");
+        Ui.Until(() => (bool)_app.Ups()["Scripts"]!["GridLost"]![0]!["WaitForExit"]!, "WaitForExit to be saved");
 
         var arguments = window.ByName("Arguments for a.ps1");
         arguments.SetFocus();
         arguments.SetValue("  -Force  ");
         window.ByName("Enable a.ps1").SetFocus(); // arguments apply when the box loses focus
-        Ui.Until(() => (string?)_app.Settings()["Scripts"]!["GridLost"]![0]!["Arguments"] == "-Force", "the arguments to be saved trimmed");
+        Ui.Until(() => (string?)_app.Ups()["Scripts"]!["GridLost"]![0]!["Arguments"] == "-Force", "the arguments to be saved trimmed");
         Assert.Equal("-Force", arguments.Value());
     }
 
@@ -249,7 +249,7 @@ public sealed class ScriptsUiTests : IDisposable
 
         elevated.SetChecked(true);
         Ui.Until(() => _app.Tasks().Count == 1, "the administrator task");
-        Ui.Until(() => (bool)_app.Settings()["Scripts"]!["GridLost"]![0]!["RunElevated"]!, "RunElevated to be saved");
+        Ui.Until(() => (bool)_app.Ups()["Scripts"]!["GridLost"]![0]!["RunElevated"]!, "RunElevated to be saved");
         Ui.WaitFor(() => window.Find(new PropertyCondition(AutomationElement.HelpTextProperty, "Runs as administrator")), "the shield");
 
         window.ByName("Run a.ps1 now").InvokeAsync();
@@ -259,7 +259,7 @@ public sealed class ScriptsUiTests : IDisposable
 
         elevated.SetChecked(false);
         Ui.Until(() => _app.Tasks().Count == 0, "the task to be deleted");
-        Ui.Until(() => !(bool)_app.Settings()["Scripts"]!["GridLost"]![0]!["RunElevated"]!, "RunElevated off to be saved");
+        Ui.Until(() => !(bool)_app.Ups()["Scripts"]!["GridLost"]![0]!["RunElevated"]!, "RunElevated off to be saved");
     }
 
     [AdminFact]

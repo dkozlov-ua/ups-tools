@@ -23,7 +23,7 @@ public partial class ScriptsView : UserControl
     private AppController Controller => (AppController)DataContext;
 
     private EventScriptsViewModel? GroupOf(ScriptItemViewModel item) =>
-        Controller.EventScripts.FirstOrDefault(g => g.Items.Contains(item));
+        Controller.Selected?.EventScripts.FirstOrDefault(g => g.Items.Contains(item));
 
     private void AddScript_Click(object sender, RoutedEventArgs e)
     {

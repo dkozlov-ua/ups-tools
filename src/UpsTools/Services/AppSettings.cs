@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using UpsTools.Core;
 
@@ -14,9 +15,26 @@ public sealed class AppSettings
     public const int MaxGridLostDelaySeconds = 600;
     public const int MaxUnreachableOnBatteryMinutes = 600;
 
-    public PairedUps? Ups { get; set; }
+    /// <summary>The paired UPSes, each with its own scripts, event limits and notifications.</summary>
+    public List<UpsSettings> Upses { get; set; } = [];
+
     public bool CloseToTray { get; set; } = true;
+
+    /// <summary>How often every UPS is polled.</summary>
     public int UpdatePeriodSeconds { get; set; } = 10;
+}
+
+/// <summary>One paired UPS and what happens on its events.</summary>
+public sealed class UpsSettings
+{
+    /// <summary>Tells UPSes apart in notifications, whatever they are called.</summary>
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    public PairedUps Device { get; set; } = null!;
+
+    /// <summary>What the user calls it; null: its brand and model (<see cref="PairedUps.Title"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Label { get; set; }
 
     /// <summary>"Battery low" at or below this charge, on battery; 0: never.</summary>
     public int BatteryLowPercent { get; set; } = 20;
@@ -98,20 +116,33 @@ public sealed class SettingsStore(AppLog log, string? folder = null)
     public string Folder { get; } = folder ?? DefaultFolder;
     public string FilePath => System.IO.Path.Combine(Folder, FileName);
 
+    /// <summary>What settings.json was renamed to when its single UPS moved into <see cref="AppSettings.Upses"/> (0.7.0).</summary>
+    public const string SingleUpsBackupName = "settings.json.before-0.7.0";
+
     public AppSettings Load()
     {
         try
         {
             if (!File.Exists(FilePath)) return new AppSettings();
-            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), Json) ?? new AppSettings();
+            var text = File.ReadAllText(FilePath);
+            var root = JsonNode.Parse(text) as JsonObject ?? throw new JsonException("not a JSON object");
+            var settings = root.Deserialize<AppSettings>(Json) ?? new AppSettings();
+            if (!root.ContainsKey(nameof(AppSettings.Upses))) MoveSingleUps(root, settings, text);
+
+            settings.Upses.RemoveAll(ups => ups.Device is null);
             settings.UpdatePeriodSeconds = Math.Clamp(settings.UpdatePeriodSeconds,
                 AppSettings.MinUpdatePeriodSeconds, AppSettings.MaxUpdatePeriodSeconds);
-            settings.BatteryLowPercent = Math.Clamp(settings.BatteryLowPercent, 0, AppSettings.MaxBatteryLowPercent);
-            settings.BatteryLowMinutes = Math.Clamp(settings.BatteryLowMinutes, 0, AppSettings.MaxBatteryLowMinutes);
-            settings.GridLostDelaySeconds = Math.Clamp(settings.GridLostDelaySeconds, 0, AppSettings.MaxGridLostDelaySeconds);
-            settings.UnreachableOnBatteryMinutes = Math.Clamp(settings.UnreachableOnBatteryMinutes, 0, AppSettings.MaxUnreachableOnBatteryMinutes);
-            foreach (var action in settings.Scripts.Values.SelectMany(list => list))
-                action.WaitLimitMinutes = Math.Clamp(action.WaitLimitMinutes, 0, ScriptAction.MaxWaitLimitMinutes);
+            foreach (var ups in settings.Upses)
+            {
+                if (string.IsNullOrWhiteSpace(ups.Id) || settings.Upses.Count(u => u.Id == ups.Id) > 1) ups.Id = Guid.NewGuid().ToString("N");
+                if (string.IsNullOrWhiteSpace(ups.Label)) ups.Label = null;
+                ups.BatteryLowPercent = Math.Clamp(ups.BatteryLowPercent, 0, AppSettings.MaxBatteryLowPercent);
+                ups.BatteryLowMinutes = Math.Clamp(ups.BatteryLowMinutes, 0, AppSettings.MaxBatteryLowMinutes);
+                ups.GridLostDelaySeconds = Math.Clamp(ups.GridLostDelaySeconds, 0, AppSettings.MaxGridLostDelaySeconds);
+                ups.UnreachableOnBatteryMinutes = Math.Clamp(ups.UnreachableOnBatteryMinutes, 0, AppSettings.MaxUnreachableOnBatteryMinutes);
+                foreach (var action in ups.Scripts.Values.SelectMany(list => list))
+                    action.WaitLimitMinutes = Math.Clamp(action.WaitLimitMinutes, 0, ScriptAction.MaxWaitLimitMinutes);
+            }
             return settings;
         }
         catch (Exception ex)
@@ -120,6 +151,30 @@ public sealed class SettingsStore(AppLog log, string? folder = null)
             log.Warn($"Settings file is unreadable ({ex.Message}); starting with defaults. The old file was kept as {backup}");
             try { File.Copy(FilePath, backup, overwrite: true); } catch { /* best effort */ }
             return new AppSettings();
+        }
+    }
+
+    /// <summary>
+    /// Before 0.7.0, settings.json had one UPS ("Ups") and its scripts, limits and notifications at the top level:
+    /// they become the first of <see cref="AppSettings.Upses"/>. The old file is kept as <see cref="SingleUpsBackupName"/>.
+    /// </summary>
+    private void MoveSingleUps(JsonObject root, AppSettings settings, string text)
+    {
+        var ups = root.Deserialize<UpsSettings>(Json) ?? new UpsSettings();
+        ups.Device = root["Ups"]?.Deserialize<PairedUps>(Json)!;
+        var hasScripts = ups.Scripts.Values.Any(list => list.Count > 0);
+        if (ups.Device is null && !hasScripts) return; // nothing to move
+
+        try { File.WriteAllText(System.IO.Path.Combine(Folder, SingleUpsBackupName), text); } catch { /* best effort */ }
+        if (ups.Device is not null)
+        {
+            settings.Upses.Add(ups);
+            Save(settings);
+        }
+        else
+        {
+            log.Warn($"The scripts set up without a paired UPS now belong to each UPS: pair one and set them up again. {SingleUpsBackupName} still has them.");
+            Save(settings);
         }
     }
 

@@ -3,6 +3,7 @@ using UpsTools.Services;
 
 namespace UpsTools.ViewModels;
 
+/// <summary>The app-wide settings: the window, Windows startup, the poll period and updates.</summary>
 public sealed class ConfigurationViewModel : ObservableObject
 {
     private readonly AppSettings _settings;
@@ -10,44 +11,29 @@ public sealed class ConfigurationViewModel : ObservableObject
     private readonly AppLog _log;
 
     /// <param name="changed">Saves the settings.</param>
-    /// <param name="monitorChanged">Applies a changed setting of the monitor: its period or the events' limits.</param>
+    /// <param name="periodChanged">Applies a changed poll period to the monitors.</param>
     /// <param name="updater">Updates from GitHub; the real one unless a test says otherwise.</param>
-    public ConfigurationViewModel(AppSettings settings, AppLog log, Action changed, Action monitorChanged, Updater? updater = null)
+    public ConfigurationViewModel(AppSettings settings, AppLog log, Action changed, Action periodChanged, Updater? updater = null)
     {
         _settings = settings;
         _log = log;
         _changed = changed;
 
-        NumberSetting Monitor(int min, int max, Func<int> get, Action<int> set) => new(min, max, get, value =>
-        {
-            set(value);
-            changed();
-            monitorChanged();
-        });
-
-        UpdatePeriod = Monitor(AppSettings.MinUpdatePeriodSeconds, AppSettings.MaxUpdatePeriodSeconds,
-            () => settings.UpdatePeriodSeconds, v => settings.UpdatePeriodSeconds = v);
-        BatteryLowPercent = Monitor(0, AppSettings.MaxBatteryLowPercent, () => settings.BatteryLowPercent, v => settings.BatteryLowPercent = v);
-        BatteryLowMinutes = Monitor(0, AppSettings.MaxBatteryLowMinutes, () => settings.BatteryLowMinutes, v => settings.BatteryLowMinutes = v);
-        GridLostDelay = Monitor(0, AppSettings.MaxGridLostDelaySeconds, () => settings.GridLostDelaySeconds, v => settings.GridLostDelaySeconds = v);
-        UnreachableOnBattery = Monitor(0, AppSettings.MaxUnreachableOnBatteryMinutes,
-            () => settings.UnreachableOnBatteryMinutes, v => settings.UnreachableOnBatteryMinutes = v);
+        UpdatePeriod = new NumberSetting(AppSettings.MinUpdatePeriodSeconds, AppSettings.MaxUpdatePeriodSeconds,
+            () => settings.UpdatePeriodSeconds, value =>
+            {
+                settings.UpdatePeriodSeconds = value;
+                changed();
+                periodChanged();
+            });
         StartWithWindows = StartupRegistration.IsEnabled;
-        Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new NotificationOption(kind, settings, changed))];
         Update = new UpdateViewModel(updater ?? new Updater(), log);
-        RefreshPairing();
     }
-
-    public IReadOnlyList<NotificationOption> Notifications { get; }
 
     public string Version { get; } = "Version " + Updater.CurrentVersionText;
 
     /// <summary>The update button.</summary>
     public UpdateViewModel Update { get; }
-
-    public string PairedTitle { get; private set => Set(ref field, value); } = "";
-    public string PairedDetail { get; private set => Set(ref field, value); } = "";
-    public bool IsPaired { get; private set => Set(ref field, value); }
 
     public bool CloseToTray
     {
@@ -80,8 +66,63 @@ public sealed class ConfigurationViewModel : ObservableObject
         }
     }
 
-    /// <summary>How often the UPS is polled, in seconds.</summary>
+    /// <summary>How often each UPS is polled, in seconds.</summary>
     public NumberSetting UpdatePeriod { get; }
+}
+
+/// <summary>One UPS's own settings: its name, when its events fire and which of them show a notification.</summary>
+public sealed class UpsConfigurationViewModel : ObservableObject
+{
+    private readonly UpsSettings _ups;
+    private readonly Action _changed;
+    private readonly Action _renamed;
+
+    /// <param name="changed">Saves the settings.</param>
+    /// <param name="rulesChanged">Applies changed event limits to the UPS's monitor.</param>
+    /// <param name="renamed">The UPS's name changed.</param>
+    public UpsConfigurationViewModel(UpsSettings ups, Action changed, Action rulesChanged, Action renamed)
+    {
+        _ups = ups;
+        _changed = changed;
+        _renamed = renamed;
+
+        NumberSetting Rule(int max, Func<int> get, Action<int> set) => new(0, max, get, value =>
+        {
+            set(value);
+            changed();
+            rulesChanged();
+        });
+
+        BatteryLowPercent = Rule(AppSettings.MaxBatteryLowPercent, () => ups.BatteryLowPercent, v => ups.BatteryLowPercent = v);
+        BatteryLowMinutes = Rule(AppSettings.MaxBatteryLowMinutes, () => ups.BatteryLowMinutes, v => ups.BatteryLowMinutes = v);
+        GridLostDelay = Rule(AppSettings.MaxGridLostDelaySeconds, () => ups.GridLostDelaySeconds, v => ups.GridLostDelaySeconds = v);
+        UnreachableOnBattery = Rule(AppSettings.MaxUnreachableOnBatteryMinutes,
+            () => ups.UnreachableOnBatteryMinutes, v => ups.UnreachableOnBatteryMinutes = v);
+        Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new NotificationOption(kind, ups, changed))];
+    }
+
+    public IReadOnlyList<NotificationOption> Notifications { get; }
+
+    /// <summary>Its brand and model, which it is called unless it is given a <see cref="Label"/>.</summary>
+    public string DefaultTitle => _ups.Device.Title;
+
+    /// <summary>What it calls itself, its address and how UPS Tools reaches it.</summary>
+    public string Detail => $"{_ups.Device.Name} · {_ups.Device.Address} · via Bluetooth LE";
+
+    /// <summary>What the user calls it; empty: <see cref="DefaultTitle"/>.</summary>
+    public string Label
+    {
+        get => _ups.Label ?? "";
+        set
+        {
+            var label = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+            if (_ups.Label == label) return;
+            _ups.Label = label;
+            OnPropertyChanged();
+            _changed();
+            _renamed();
+        }
+    }
 
     /// <summary>"Battery low" at or below this charge; 0: off.</summary>
     public NumberSetting BatteryLowPercent { get; }
@@ -95,14 +136,11 @@ public sealed class ConfigurationViewModel : ObservableObject
     /// <summary>Minutes unreachable on battery before "Battery low"; 0: never.</summary>
     public NumberSetting UnreachableOnBattery { get; }
 
-    public void RefreshPairing()
+    /// <summary>The device was paired again, e.g. with another user ID.</summary>
+    public void RefreshDevice()
     {
-        PairedUps? ups = _settings.Ups;
-        IsPaired = ups is not null;
-        PairedTitle = ups is null ? "No UPS paired" : ups.Title;
-        PairedDetail = ups is null
-            ? "Find your UPS to start monitoring it."
-            : $"{ups.Name} · {ups.Address} · via Bluetooth LE";
+        OnPropertyChanged(nameof(DefaultTitle));
+        OnPropertyChanged(nameof(Detail));
     }
 }
 
@@ -145,8 +183,8 @@ public sealed class NumberSetting : ObservableObject
     public void Normalize() => Text = _get().ToString();
 }
 
-/// <summary>Whether one event shows a Windows notification.</summary>
-public sealed class NotificationOption(UpsEventKind kind, AppSettings settings, Action changed) : ObservableObject
+/// <summary>Whether one event of a UPS shows a Windows notification.</summary>
+public sealed class NotificationOption(UpsEventKind kind, UpsSettings settings, Action changed) : ObservableObject
 {
     public UpsEventKind Kind { get; } = kind;
     public string Title { get; } = kind.Title();

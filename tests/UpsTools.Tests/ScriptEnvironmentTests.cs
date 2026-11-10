@@ -22,7 +22,8 @@ public class ScriptEnvironmentTests
     public void An_event_gets_the_reading_it_came_with()
     {
         CultureInfo.CurrentCulture = new CultureInfo("de-DE"); // numbers mustn't depend on it
-        var variables = ScriptEnvironment.For(UpsEventKind.BatteryLow, OnBattery, reachable: true, TimeSpan.FromSeconds(754.9), manual: false);
+        var variables = ScriptEnvironment.For(UpsEventKind.BatteryLow, OnBattery, reachable: true, TimeSpan.FromSeconds(754.9), manual: false,
+            ups: "Office");
 
         Assert.Equal(new Dictionary<string, string?>
         {
@@ -34,6 +35,7 @@ public class ScriptEnvironmentTests
             ["UPS_RUNTIME_MINUTES"] = "328", // 1024 Wh × 64 % / 119.8 W = 5.47 h
             ["UPS_LOAD_W"] = "120",
             ["UPS_OUTAGE_SECONDS"] = "754",
+            ["UPS_NAME"] = "Office",
             ["UPS_MODEL"] = "EL100V2",
             ["UPS_SERIAL"] = "2527008220279",
             ["UPS_READING_TIME"] = "2026-11-05T21:30:05+02:00",

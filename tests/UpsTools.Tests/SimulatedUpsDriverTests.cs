@@ -19,6 +19,41 @@ public sealed class SimulatedUpsDriverTests : IDisposable
         _driver.CreateConnection(new PairedUps(SimulatedUpsDriver.DriverId, SimulatedUpsDriver.Address, "x", "x"));
 
     [Fact]
+    public async Task Several_files_are_several_upses()
+    {
+        var second = Path.Combine(Path.GetTempPath(), $"ups-sim-{Guid.NewGuid():N}.json");
+        var missing = Path.Combine(Path.GetTempPath(), $"ups-sim-{Guid.NewGuid():N}.json");
+        try
+        {
+            Write(new { BatteryPercent = 64 });
+            File.WriteAllText(second, JsonSerializer.Serialize(new { BatteryPercent = 33, Serial = "SIM0002" }));
+            var driver = new SimulatedUpsDriver($"{_file}; {second};{missing}");
+            Assert.Equal([_file, second, missing], driver.Paths);
+            Assert.Equal(_file, driver.Path);
+
+            var found = new List<DiscoveredUps>();
+            await driver.DiscoverAsync(found.Add, TimeSpan.Zero, CancellationToken.None);
+            Assert.Equal([(SimulatedUpsDriver.Address, SimulatedUpsDriver.DeviceName), ("00:00:00:00:00:02", "SIMULATOR0002")],
+                found.Select(d => (d.Address, d.Name)));
+
+            async Task<int?> Battery(string address)
+            {
+                await using var ups = driver.CreateConnection(new PairedUps(SimulatedUpsDriver.DriverId, address, "x", "x"));
+                return (await ups.ReadAsync(CancellationToken.None)).BatteryPercent;
+            }
+
+            Assert.Equal(64, await Battery(SimulatedUpsDriver.Address));
+            Assert.Equal(33, await Battery("00:00:00:00:00:02"));
+            await Assert.ThrowsAsync<IOException>(() => Battery("00:00:00:00:00:03")); // its file is missing
+            await Assert.ThrowsAsync<IOException>(() => Battery("00:00:00:00:00:09")); // no file at all
+        }
+        finally
+        {
+            File.Delete(second);
+        }
+    }
+
+    [Fact]
     public async Task Each_read_reports_what_the_file_says()
     {
         Write(new { GridPresent = false, BatteryPercent = 64, CapacityWh = 1000, AcOutputW = 120 });

@@ -32,6 +32,9 @@ public static class ScriptEnvironment
     /// <summary>For Grid restored, how long the outage lasted; on battery, how long it has lasted so far.</summary>
     public const string OutageSeconds = "UPS_OUTAGE_SECONDS";
 
+    /// <summary>Which UPS: its name in UPS Tools, e.g. "Bluetti EL100V2" or the name it was given.</summary>
+    public const string Name = "UPS_NAME";
+
     public const string Model = "UPS_MODEL";
     public const string Serial = "UPS_SERIAL";
 
@@ -39,16 +42,17 @@ public static class ScriptEnvironment
     public const string ReadingTime = "UPS_READING_TIME";
 
     public static IReadOnlyList<string> Names { get; } =
-        [Event, Manual, Grid, Reachable, BatteryPercent, RuntimeMinutes, LoadWatts, OutageSeconds, Model, Serial, ReadingTime];
+        [Event, Manual, Grid, Reachable, BatteryPercent, RuntimeMinutes, LoadWatts, OutageSeconds, Name, Model, Serial, ReadingTime];
 
     /// <param name="kind">The event the scripts belong to.</param>
     /// <param name="status">The reading at the event, or the last one.</param>
     /// <param name="reachable">Whether the UPS answers; null when not known (nothing is monitored).</param>
     /// <param name="outage">How long the grid has been, or was, gone.</param>
     /// <param name="manual">Started by Run now.</param>
+    /// <param name="ups">The UPS's name in UPS Tools.</param>
     /// <returns>Every name in <see cref="Names"/>: null removes it.</returns>
     public static IReadOnlyDictionary<string, string?> For(UpsEventKind? kind, UpsStatus? status, bool? reachable,
-        TimeSpan? outage, bool manual)
+        TimeSpan? outage, bool manual, string? ups = null)
     {
         static string? Number(double? value) => value is { } v ? Math.Floor(v).ToString("0", CultureInfo.InvariantCulture) : null;
         static string? Flag(bool? value) => value is { } v ? v ? "1" : "0" : null;
@@ -63,6 +67,7 @@ public static class ScriptEnvironment
             [RuntimeMinutes] = Number(status?.EstimatedRuntime?.TotalMinutes),
             [LoadWatts] = Number(status?.TotalOutputW is { } w ? Math.Round(w) : null),
             [OutageSeconds] = Number(outage is { } o && o >= TimeSpan.Zero ? o.TotalSeconds : null),
+            [Name] = ups,
             [Model] = status?.Model,
             [Serial] = status?.Serial,
             [ReadingTime] = status?.Timestamp.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture),
