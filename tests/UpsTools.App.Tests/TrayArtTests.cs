@@ -110,11 +110,16 @@ public class TrayArtTests
             Assert.True(centres[TrayState.OnBattery].R > 0xA0 && centres[TrayState.OnBattery].G > 0x70);
 
             tray.Update(TrayState.OnBattery, "On battery · 80 % · 2 h 10 m left");
-            Assert.Equal((TrayState.OnBattery, "UPS Tools — On battery · 80 % · 2 h 10 m left", "On battery · 80 % · 2 h 10 m left"), tray.Current);
+            Assert.Equal((TrayState.OnBattery, "UPS Tools\nOn battery · 80 % · 2 h 10 m left", "On battery · 80 % · 2 h 10 m left"), tray.Current);
+
+            // Several UPSes: the name, then a line for each.
+            tray.Update(TrayState.OnBattery, "Desk: Grid online · 80 % · 120 W load\nOffice: On battery · 46 % · 2 h 10 m left");
+            Assert.Equal("UPS Tools\nDesk: Grid online · 80 % · 120 W load\nOffice: On battery · 46 % · 2 h 10 m left", tray.Current.Tooltip);
 
             var longStatus = new string('x', 200);
             tray.Update(TrayState.Problem, longStatus);
             Assert.Equal(127, tray.Current.Tooltip.Length); // Windows' limit
+            Assert.EndsWith("x…", tray.Current.Tooltip);
             Assert.Equal(longStatus, tray.Current.Status);
         });
     }

@@ -61,6 +61,24 @@ public sealed class LifecycleUiTests : IDisposable
         Assert.Contains("UPS Tools exiting", _app.Log());
     }
 
+    [Theory]
+    [InlineData(false, "PC is shutting down; disconnecting from the UPS")]
+    [InlineData(true, "Signing out of Windows; disconnecting from the UPS")]
+    public void Shutting_down_or_signing_out_disconnects_and_exits(bool signingOut, string logged)
+    {
+        _app.Seed();
+        _app.Start("--background");
+        Ui.Until(() => _app.Log().Contains("UPS Tools started"), "the app to start");
+        Thread.Sleep(1000);
+
+        Session.End(_app.Pid, signingOut);
+
+        Assert.True(_app.Process!.WaitForExit(TimeSpan.FromSeconds(15)));
+        var log = _app.Log();
+        Assert.Contains(logged, log);
+        Assert.True(log.IndexOf(logged, StringComparison.Ordinal) < log.IndexOf("UPS Tools exiting", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Exit_without_a_running_copy_succeeds_at_once()
     {

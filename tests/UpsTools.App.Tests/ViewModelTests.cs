@@ -225,7 +225,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
     {
         Assert.True(_vm.CloseToTray);
         Assert.False(_vm.StartWithWindows);
-        Assert.Equal("10", _vm.UpdatePeriod.Text);
+        Assert.Equal("60", _vm.UpdatePeriod.Text);
         Assert.Equal(("20", "10", "0", "0"), (_upsVm.BatteryLowPercent.Text, _upsVm.BatteryLowMinutes.Text, _upsVm.GridLostDelay.Text, _upsVm.UnreachableOnBattery.Text));
         Assert.Matches(@"^Version \d+\.\d+\.\d+$", _vm.Version);
         Assert.Equal(["Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again"], _upsVm.Notifications.Select(n => n.Title));
@@ -298,15 +298,15 @@ public sealed class ConfigurationViewModelTests : IDisposable
     [Theory]
     [InlineData("")]
     [InlineData("abc")]
-    [InlineData("10")] // unchanged
+    [InlineData("60")] // unchanged
     public void An_update_period_that_does_not_change_anything_is_ignored(string text)
     {
         _vm.UpdatePeriod.Text = text;
-        Assert.Equal(10, _settings.UpdatePeriodSeconds);
+        Assert.Equal(60, _settings.UpdatePeriodSeconds);
         Assert.Equal(0, _monitorChanges);
         Assert.Equal(0, _saves);
         _vm.UpdatePeriod.Normalize();
-        Assert.Equal("10", _vm.UpdatePeriod.Text);
+        Assert.Equal("60", _vm.UpdatePeriod.Text);
     }
 
     [Theory]

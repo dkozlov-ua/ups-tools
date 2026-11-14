@@ -744,7 +744,25 @@ public sealed class AppControllerTests : IDisposable
         await Online();
         await UiThread.Run(controller.OnGoingToSleep);
         Assert.Equal(1, _ups.Resets);
-        Assert.Contains(_log.Recent, e => e.Message == "PC is going to sleep; disconnecting from the UPS");
+        Assert.Contains(_log.Recent, e => e.Message == "PC is going to sleep or hibernate; disconnecting from the UPS");
+    }
+
+    [Theory]
+    [InlineData(false, "PC is shutting down; disconnecting from the UPSes")]
+    [InlineData(true, "Signing out of Windows; disconnecting from the UPSes")]
+    public async Task Shutting_down_or_signing_out_closes_every_link(bool signingOut, string logged)
+    {
+        var (second, settings) = Second();
+        var controller = await Start(others: settings);
+        await Online();
+        await UiThread.Run(() => controller.OnSessionEnding(signingOut));
+        Assert.Equal((1, 1), (_ups.Resets, second.Resets));
+        Assert.Contains(_log.Recent, e => e.Message == logged);
+
+        // And they stay closed until the app ends: no reconnecting in the meantime.
+        var reads = _ups.Reads;
+        await Task.Delay(300);
+        Assert.Equal(reads, _ups.Reads);
     }
 
     [Fact]
@@ -934,7 +952,7 @@ public sealed class AppControllerTests : IDisposable
         await UiThread.Run(controller.OnGoingToSleep);
         await UiThread.Run(controller.OnResumedFromSleep);
         Assert.Equal((2, 2), (_ups.Resets, second.Resets));
-        Assert.Contains(_log.Recent, e => e.Message == "PC is going to sleep; disconnecting from the UPSes");
+        Assert.Contains(_log.Recent, e => e.Message == "PC is going to sleep or hibernate; disconnecting from the UPSes");
     }
 
     [Fact]

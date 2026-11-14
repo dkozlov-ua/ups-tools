@@ -69,6 +69,7 @@ public partial class App : Application
         _notifier = new Notifier(_controller.Log, _tray, () => Dispatcher.InvokeAsync(ShowMainWindow));
         _controller.AttachTray(_tray, _notifier);
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        SessionEnding += OnSessionEnding;
 
         _controller.Log.Info($"UPS Tools started ({_controller.Configuration.Version})");
         _controller.StartMonitoring();
@@ -158,6 +159,22 @@ public partial class App : Application
         // Suspend is handled right here, before Windows goes on to sleep; the link has to be closed by then.
         if (e.Mode == PowerModes.Suspend) _controller?.OnGoingToSleep();
         else if (e.Mode == PowerModes.Resume) Dispatcher.InvokeAsync(() => _controller?.OnResumedFromSleep());
+    }
+
+    private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e)
+    {
+        // Shutting down, restarting or signing out. WPF shuts the app down once this returns, and Windows ends the
+        // process soon after, so the links are closed right here, as before sleep.
+        if (_exiting) return;
+        _exiting = true;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        if (_controller is not null)
+        {
+            _controller.OnSessionEnding(signingOut: e.ReasonSessionEnding == ReasonSessionEnding.Logoff);
+            _controller.Log.Info("UPS Tools exiting");
+        }
+        _tray?.Dispose();
+        _showWindowSignal?.Set(); // release the listener thread
     }
 
     private async Task ExitAsync()

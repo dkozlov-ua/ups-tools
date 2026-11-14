@@ -21,7 +21,7 @@ public sealed class AppSettings
     public bool CloseToTray { get; set; } = true;
 
     /// <summary>How often every UPS is polled.</summary>
-    public int UpdatePeriodSeconds { get; set; } = 10;
+    public int UpdatePeriodSeconds { get; set; } = 60;
 }
 
 /// <summary>One paired UPS and what happens on its events.</summary>

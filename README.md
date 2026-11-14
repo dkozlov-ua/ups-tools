@@ -43,7 +43,7 @@ low, and wake the NAS when the grid comes back.
 
 | Event | Fires when |
 |---|---|
-| Grid lost | Mains voltage at the UPS input disappears (UPS switches to battery), and stays gone for the wait set in Configuration (none by default) |
+| Grid lost | Mains voltage at the UPS input disappears (UPS switches to battery), and stays gone for the *Grid lost grace period* set in Configuration (none by default) |
 | Battery low | On battery, the charge falls to 20 % or the time left to 10 minutes (both can be changed or turned off), or, if set, the UPS has been unreachable on battery for a while; once per outage |
 | Grid restored | Mains voltage comes back |
 | UPS unreachable | 3 polls in a row fail |
@@ -55,13 +55,13 @@ the first reading. The time left is the stored energy divided by the average loa
 estimate isn't used: it runs far longer than the battery can last), and it has to be at or below the limit in two
 readings in a row.
 
-With a wait before *Grid lost* (Configuration → Events), a blip shorter than the wait fires nothing: no scripts, no
-notification, only a line in the log. Once the wait is over, *Grid lost* fires, and the outage (in *Grid restored* and
-`UPS_OUTAGE_SECONDS`) counts from the first reading without the grid. *Battery low* waits for *Grid lost*.
+With a *Grid lost grace period* (Configuration → Events), a blip shorter than it fires nothing: no scripts, no
+notification, only a line in the log. Once the grace period is over, *Grid lost* fires, and the outage (in *Grid
+restored* and `UPS_OUTAGE_SECONDS`) counts from the first reading without the grid. *Battery low* waits for *Grid lost*.
 
 If the UPS stops answering while on battery (e.g. its Bluetooth link drops), nothing tells how much charge is left.
-With *Unreachable on battery* set (Configuration → Events, off by default), *Battery low* fires once it has been
-unreachable that many minutes; its notification says so and shows the last reading, and its scripts get
+With a *UPS unreachable on battery grace period* set (Configuration → Events, off by default), *Battery low* fires
+once it has been unreachable that many minutes; its notification says so and shows the last reading, and its scripts get
 `UPS_REACHABLE=0`. If the UPS answers again first, nothing fires; if it answers with the grid back, *Grid restored*
 stops the *Battery low* scripts as usual.
 

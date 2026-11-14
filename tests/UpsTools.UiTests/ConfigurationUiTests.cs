@@ -64,8 +64,8 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        var percent = window.ByName("Battery low at this charge in percent");
-        var minutes = window.ByName("Battery low at this time left in minutes");
+        var percent = window.ByName("Low battery threshold in percent");
+        var minutes = window.ByName("Time on battery left threshold in minutes");
         Assert.Equal(("20", "10"), (percent.Value(), minutes.Value()));
 
         percent.SetFocus();
@@ -85,13 +85,13 @@ public sealed class ConfigurationUiTests : IDisposable
         _app.Start();
         var window = _app.Tab("Configuration");
 
-        var delay = window.ByName("Wait before Grid lost in seconds");
+        var delay = window.ByName("Grid lost grace period in seconds");
         Assert.Equal("0", delay.Value());
         delay.SetFocus();
         delay.SetValue("90");
         Ui.Until(() => (int)_app.Ups()["GridLostDelaySeconds"]! == 90, "the delay to be saved");
 
-        var unreachable = window.ByName("Battery low after this many minutes unreachable on battery");
+        var unreachable = window.ByName("UPS unreachable on battery grace period in minutes");
         Assert.Equal("0", unreachable.Value());
         unreachable.SetFocus();
         unreachable.SetValue("5");

@@ -362,21 +362,31 @@ public sealed class AppController : ObservableObject
 
     private string TheUpses => HasSeveral ? "the UPSes" : "the UPS";
 
-    /// <summary>The PC is about to sleep: close the links now, waiting a few seconds at most (Windows won't wait longer).</summary>
-    public void OnGoingToSleep()
+    /// <summary>The PC is about to sleep or hibernate (Windows doesn't say which): close the links now.</summary>
+    public void OnGoingToSleep() => CloseLinks("PC is going to sleep or hibernate", "before sleep");
+
+    /// <summary>
+    /// Windows is shutting down, restarting or signing out, and the app is about to end with it: close the links now
+    /// rather than leave them to the Bluetooth stack, which can keep a UPS thinking it is still connected.
+    /// </summary>
+    public void OnSessionEnding(bool signingOut) =>
+        CloseLinks(signingOut ? "Signing out of Windows" : "PC is shutting down", "before shutting down");
+
+    /// <summary>Closes every link, waiting a few seconds at most (Windows won't wait longer); the monitors stay paused.</summary>
+    private void CloseLinks(string why, string when)
     {
         var monitors = Monitors.ToList();
         if (monitors.Count == 0) return;
-        Log.Info($"PC is going to sleep; disconnecting from {TheUpses}");
+        Log.Info($"{why}; disconnecting from {TheUpses}");
         try
         {
             // Off this thread, so the wait can't hold up the continuations it waits for.
             if (!Task.Run(() => Task.WhenAll(monitors.Select(m => m.NotifySuspendingAsync()))).Wait(TimeSpan.FromSeconds(3)))
-                Log.Info($"The link to {TheUpses} did not close in time before sleep");
+                Log.Info($"The link to {TheUpses} did not close in time {when}");
         }
         catch (Exception ex)
         {
-            Log.Info($"Closing the link to {TheUpses} before sleep failed: {ex.GetBaseException().Message}");
+            Log.Info($"Closing the link to {TheUpses} {when} failed: {ex.GetBaseException().Message}");
         }
     }
 

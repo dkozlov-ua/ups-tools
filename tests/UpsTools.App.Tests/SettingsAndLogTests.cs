@@ -66,7 +66,7 @@ public sealed class SettingsAndLogTests : IDisposable
         var settings = _store.Load();
         Assert.Empty(settings.Upses);
         Assert.True(settings.CloseToTray);
-        Assert.Equal(10, settings.UpdatePeriodSeconds);
+        Assert.Equal(60, settings.UpdatePeriodSeconds);
         Assert.Empty(_log.Recent);
     }
 
@@ -285,7 +285,7 @@ public sealed class SettingsAndLogTests : IDisposable
     public void A_null_file_gives_defaults()
     {
         File.WriteAllText(_store.FilePath, "null");
-        Assert.Equal(10, _store.Load().UpdatePeriodSeconds);
+        Assert.Equal(60, _store.Load().UpdatePeriodSeconds);
     }
 
     [Fact]

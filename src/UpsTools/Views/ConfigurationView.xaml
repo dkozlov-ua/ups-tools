@@ -132,12 +132,12 @@
                             </Grid.RowDefinitions>
 
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="Wait before &quot;Grid lost&quot;" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Text="Grid lost grace period" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                                 <TextBlock Style="{StaticResource Detail}"
                                            Text="The grid must stay gone this long (0–600 seconds): a shorter blip runs no scripts and is only logged. 0 fires at the first reading without it." />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Wait before Grid lost in seconds"
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Grid lost grace period in seconds"
                                          Text="{Binding GridLostDelay.Text, UpdateSourceTrigger=PropertyChanged}"
                                          Tag="{Binding GridLostDelay}" LostFocus="Number_LostFocus" />
                                 <TextBlock Text="seconds" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
@@ -147,35 +147,35 @@
                                        Text="&quot;Battery low&quot; fires once per outage, when the UPS runs on battery and either limit below is reached, e.g. to hibernate the PC in time. 0 turns a limit off." />
 
                             <StackPanel Grid.Row="2" VerticalAlignment="Center" Margin="0,10,0,0">
-                                <TextBlock Text="Battery charge" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Text="Low battery threshold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                                 <TextBlock Style="{StaticResource Detail}" Text="At or below this level (0–99 %)." />
                             </StackPanel>
                             <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,10,0,0">
-                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low at this charge in percent"
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Low battery threshold in percent"
                                          Text="{Binding BatteryLowPercent.Text, UpdateSourceTrigger=PropertyChanged}"
                                          Tag="{Binding BatteryLowPercent}" LostFocus="Number_LostFocus" />
                                 <TextBlock Text="%" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
                             </StackPanel>
 
                             <StackPanel Grid.Row="3" VerticalAlignment="Center" Margin="0,12,0,0">
-                                <TextBlock Text="Time left" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Text="Time on battery left threshold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                                 <TextBlock Style="{StaticResource Detail}"
                                            Text="At or below this many minutes at the current load (0–600), in two readings in a row, so a short spike in load doesn't count." />
                             </StackPanel>
                             <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,12,0,0">
-                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low at this time left in minutes"
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Time on battery left threshold in minutes"
                                          Text="{Binding BatteryLowMinutes.Text, UpdateSourceTrigger=PropertyChanged}"
                                          Tag="{Binding BatteryLowMinutes}" LostFocus="Number_LostFocus" />
                                 <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
                             </StackPanel>
 
                             <StackPanel Grid.Row="4" VerticalAlignment="Center" Margin="0,12,0,0">
-                                <TextBlock Text="Unreachable on battery" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Text="UPS unreachable on battery grace period" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                                 <TextBlock Style="{StaticResource Detail}"
                                            Text="When the UPS stops answering while on battery, its charge can't be known: count it as low after this many minutes (0–600; 0: never)." />
                             </StackPanel>
                             <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,12,0,0">
-                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="Battery low after this many minutes unreachable on battery"
+                                <TextBox Width="80" HorizontalContentAlignment="Right" AutomationProperties.Name="UPS unreachable on battery grace period in minutes"
                                          Text="{Binding UnreachableOnBattery.Text, UpdateSourceTrigger=PropertyChanged}"
                                          Tag="{Binding UnreachableOnBattery}" LostFocus="Number_LostFocus" />
                                 <TextBlock Text="minutes" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />

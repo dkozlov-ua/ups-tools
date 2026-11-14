@@ -54,12 +54,16 @@ public sealed class TrayIcon : ITray, IDisposable
 
     private TrayState _state;
 
+    /// <summary>Windows' limit for the tooltip.</summary>
+    private const int MaxTooltip = 127;
+
     public void Update(TrayState state, string status)
     {
         _state = state;
         _icon.Icon = _icons[state];
-        var text = $"UPS Tools — {status}";
-        _icon.Text = text.Length > 127 ? text[..127] : text;
+        // The app's name on a line of its own, like each UPS's line under it when there are several.
+        var text = $"UPS Tools\n{status}";
+        _icon.Text = text.Length > MaxTooltip ? text[..(MaxTooltip - 1)] + "…" : text;
         _statusItem.Text = status;
     }
 
