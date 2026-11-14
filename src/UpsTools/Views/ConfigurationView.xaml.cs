@@ -24,11 +24,23 @@ public partial class ConfigurationView : UserControl
         // The dialog needs the Bluetooth links to itself: a UPS accepts one connection at a time.
         await controller.StopMonitoringAsync();
 
-        var dialog = new PairWindow(controller.Drivers, controller.Log, controller.KnownUserId) { Owner = owner };
+        var dialog = new PairWindow(controller.Drivers, controller.Log, controller.KnownUserId, () => controller.NetworkUpses) { Owner = owner };
         if (dialog.ShowDialog() == true && dialog.Result is { } paired)
-            controller.Pair(paired);
+            await controller.PairAsync(paired, dialog.ResultLabel);
         else
             controller.StartMonitoring();
+    }
+
+    private void NewCode_Click(object sender, RoutedEventArgs e)
+    {
+        var question = "Make a new sharing code? The other PCs stop sharing with this one until they are given the new code.";
+        if (MessageBox.Show(Window.GetWindow(this)!, question, "UPS Tools", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            Controller.Sharing.NewCode();
+    }
+
+    private void CopyCode_Click(object sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(Controller.Sharing.Code); } catch { /* the clipboard is busy */ }
     }
 
     private async void Forget_Click(object sender, RoutedEventArgs e)

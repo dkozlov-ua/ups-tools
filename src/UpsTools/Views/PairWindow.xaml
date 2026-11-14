@@ -18,7 +18,7 @@
         <StackPanel>
             <TextBlock Text="Find your UPS" Style="{StaticResource PageTitle}" />
             <TextBlock Style="{StaticResource Detail}" FontSize="13" Margin="0,4,0,12"
-                       Text="Make sure the UPS is switched on, within Bluetooth range, and not connected to its phone app over Bluetooth." />
+                       Text="Make sure the UPS is switched on, within Bluetooth range, and not connected to its phone app over Bluetooth. With Network sharing on, the UPSes other PCs are connected to are listed too." />
         </StackPanel>
 
         <ListView x:Name="DeviceList" Grid.Row="1" SelectionMode="Single" SelectionChanged="DeviceList_SelectionChanged"
@@ -34,13 +34,15 @@
                         <TextBlock FontFamily="{StaticResource IconFont}" FontSize="20" Text="&#xE945;" VerticalAlignment="Center"
                                    Margin="0,0,12,0" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
                         <StackPanel Grid.Column="1">
-                            <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Label, Mode=OneWay, StringFormat={} ({0})}" FontWeight="SemiBold" />
+                            </StackPanel>
                             <TextBlock Style="{StaticResource Detail}">
                                 <Run Text="{Binding Name, Mode=OneWay}" /> · <Run Text="{Binding Address, Mode=OneWay}" />
                             </TextBlock>
                         </StackPanel>
-                        <TextBlock Grid.Column="2" Style="{StaticResource Caption}" Margin="12,0,0,0"
-                                   Text="{Binding Rssi, StringFormat={}{0} dBm}" />
+                        <TextBlock Grid.Column="2" Style="{StaticResource Caption}" Margin="12,0,0,0" Text="{Binding Where, Mode=OneWay}" />
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using UpsTools.Core;
 using UpsTools.Core.EcoFlow;
+using UpsTools.Core.Sharing;
 using UpsTools.Services;
 
 namespace UpsTools.Views;
@@ -19,15 +20,18 @@ public partial class PairWindow : Window
 
     private readonly IReadOnlyList<IUpsDriver> _drivers;
     private readonly AppLog _log;
+    private readonly Func<IReadOnlyList<NetworkUps>> _network;
     private readonly ObservableCollection<DiscoveredUps> _found = [];
     private CancellationTokenSource? _work;
 
     /// <param name="userId">The user ID the paired UPS uses, if any: the account panel starts with it.</param>
-    public PairWindow(IReadOnlyList<IUpsDriver> drivers, AppLog log, string? userId = null)
+    /// <param name="network">The UPSes other PCs are connected to (<see cref="UpsCoordinator.NetworkUpses"/>).</param>
+    public PairWindow(IReadOnlyList<IUpsDriver> drivers, AppLog log, string? userId = null, Func<IReadOnlyList<NetworkUps>>? network = null)
     {
         InitializeComponent();
         _drivers = drivers;
         _log = log;
+        _network = network ?? (() => []);
         UserIdBox.Text = userId ?? "";
         DeviceList.ItemsSource = _found;
         Loaded += async (_, _) => await ScanAsync();
@@ -35,6 +39,9 @@ public partial class PairWindow : Window
     }
 
     public PairedUps? Result { get; private set; }
+
+    /// <summary>For a UPS found on the network: what the PC connected to it calls it.</summary>
+    public string? ResultLabel { get; private set; }
 
     /// <summary>Cancel whatever is running (scan or connect) and start a new unit of work.</summary>
     private CancellationTokenSource StartWork(TimeSpan? timeout = null)
@@ -49,6 +56,9 @@ public partial class PairWindow : Window
     {
         var work = StartWork();
         _found.Clear();
+        foreach (var shared in _network())
+            AddOrUpdate(new DiscoveredUps(shared.Ups.Device.DriverId, shared.Ups.Device.Address, shared.Ups.Device.Name,
+                shared.Ups.Device.Model, null, shared.Pc.Pc, shared.Ups.Title == shared.Ups.Device.Title ? null : shared.Ups.Title));
         SetState(Mode.Scanning, "Scanning for Bluetooth devices…");
 
         try
@@ -83,12 +93,24 @@ public partial class PairWindow : Window
     {
         var index = _found.ToList().FindIndex(d => d.DriverId == device.DriverId && d.Address == device.Address);
         if (index < 0) _found.Add(device);
+        else if (_found[index].ConnectedTo is not null) return; // another PC is connected to it: it is read through that one
         else if (_found[index].Rssi != device.Rssi && DeviceList.SelectedIndex != index) _found[index] = device;
     }
 
     private async Task PairAsync()
     {
         if (DeviceList.SelectedItem is not DiscoveredUps selected) return;
+        if (selected.ConnectedTo is { } pc)
+        {
+            // Read through that PC: nothing to check here, and connecting would take the UPS away from it. The user ID
+            // matters only if this PC takes over one day.
+            var id = UserIdBox.Text.Trim();
+            Result = new PairedUps(selected.DriverId, selected.Address, selected.Name, selected.Model, id.Length > 0 ? id : null);
+            ResultLabel = selected.Label;
+            _log.Info($"Pairing {selected.Name}, which {pc} is connected to");
+            DialogResult = true;
+            return;
+        }
         var driver = _drivers.First(d => d.Id == selected.DriverId);
         var userId = driver.RequiresUserId ? UserIdBox.Text.Trim() : null;
         if (userId == "")
@@ -171,8 +193,9 @@ public partial class PairWindow : Window
     private void UpdatePairButton()
     {
         PairButton.IsEnabled = DeviceList.SelectedItem is not null && _mode is not (Mode.Connecting or Mode.SigningIn);
-        var driver = DeviceList.SelectedItem is DiscoveredUps selected ? _drivers.FirstOrDefault(d => d.Id == selected.DriverId) : null;
-        AccountPanel.Visibility = driver?.RequiresUserId == true ? Visibility.Visible : Visibility.Collapsed;
+        var selected = DeviceList.SelectedItem as DiscoveredUps;
+        var driver = selected is null ? null : _drivers.FirstOrDefault(d => d.Id == selected.DriverId);
+        AccountPanel.Visibility = driver?.RequiresUserId == true && selected?.ConnectedTo is null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void SignIn_Click(object sender, RoutedEventArgs e) => await SignInAsync();

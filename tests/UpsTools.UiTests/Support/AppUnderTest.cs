@@ -191,6 +191,7 @@ internal sealed class AppUnderTest : IDisposable
         foreach (var arg in args) psi.ArgumentList.Add(arg);
         psi.Environment["UPSTOOLS_PROFILE"] = Profile;
         psi.Environment["UPSTOOLS_SIMULATOR"] = $"{SimulatorFile};{SecondSimulatorFile}";
+        psi.Environment["UPSTOOLS_SHARING_LOOPBACK"] = "1"; // sharing stays on this PC: no firewall prompt
         return psi;
     }
 

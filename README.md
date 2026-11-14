@@ -10,6 +10,10 @@ low, and wake the NAS when the grid comes back.
   limits and notifications, and optionally a name of its own (e.g. *Desk*, *Server rack*) that notifications, the tray
   and the log use. With more than one, a picker next to the tabs chooses the UPS the window shows, and the dashboard
   has a tile for each.
+- **Network sharing**: several PCs can watch the same UPS. With *Share with other PCs* on and the same sharing code,
+  the PCs on your network find each other, only one of them connects to each UPS over Bluetooth, and the others read
+  it through that one, each with its own scripts and notifications; another PC takes over if that one goes away. UPSes
+  another PC is connected to show up in **Add UPS…** (see [Network sharing](#network-sharing)).
 - **Dashboard**: grid status, battery level, charge/discharge rate, estimated time on battery, input and output power, recent activity.
 - **Scripts**: attach any number of scripts to each event of each UPS. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
   file association; `.ps1` files run hidden through PowerShell. Arguments are optional.
@@ -88,7 +92,31 @@ Smart Extra Battery when one is plugged in; it doesn't report its input voltage 
 while its AC input is plugged in.
 
 A UPS accepts a single Bluetooth connection: while UPS Tools is connected to it, its phone app can only reach it over
-Wi-Fi.
+Wi-Fi, and another PC can only reach it through this one ([Network sharing](#network-sharing)).
+
+## Network sharing
+
+Turn on Configuration → Network sharing → **Share with other PCs** on each PC that watches a UPS, and give them all
+the same **sharing code** (the first PC makes one up: copy it, and paste it on the others). Then:
+
+- The PCs find each other on the local network on their own: each announces itself every 5 s over UDP multicast
+  (239.255.47.70, port 47870). The card lists the PCs found and the UPSes they are connected to, and a PC that has
+  another code.
+- For each UPS, only one PC connects over Bluetooth. The others read it through that PC over TCP (port 47870, or
+  another free one), getting each reading as soon as that PC has it, and each runs its own scripts and notifications
+  with its own event limits. The dashboard and the list of UPSes say which PC a UPS is read through.
+- When the PCs start together, the one that connects is chosen by a fixed order. If it exits, sleeps, shuts down or
+  turns sharing off, it tells the others, and one of them connects at once; if it disappears without a word (e.g. it
+  lost its network), the others take over after about 17 s. A PC that is connected but has had the UPS unreachable for
+  2 minutes (e.g. out of Bluetooth range) lets another one try.
+- **Add UPS…** lists the UPSes the other PCs are connected to: pairing one takes its name from that PC and doesn't
+  connect to it.
+
+Only PCs with the same code can take part: the announcements are encrypted and authenticated (AES-GCM) with a key
+derived from the code, and so are the links that carry the readings, so nobody else on the network can read the UPS or
+pass off a reading as its own (e.g. a fake *Grid lost* that runs your shutdown scripts). The code itself never goes over
+the network. Windows may ask once whether UPS Tools may use the network: allow it on private networks. A PC with
+sharing off connects over Bluetooth regardless, so turn it on on every PC that has the same UPS paired.
 
 ## Requirements
 

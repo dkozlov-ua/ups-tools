@@ -43,7 +43,7 @@
                     </ItemsControl>
 
                     <TextBlock Style="{StaticResource Detail}" Margin="0,12,0,0"
-                               Text="A UPS accepts one Bluetooth connection at a time. While UPS Tools is connected to it, its phone app can only reach it over Wi-Fi." />
+                               Text="A UPS accepts one Bluetooth connection at a time. While UPS Tools is connected to it, its phone app can only reach it over Wi-Fi. To watch it from several PCs, turn on Network sharing below on each of them: one connects, the others read it through that one." />
                 </StackPanel>
             </Border>
 
@@ -83,6 +83,70 @@
                                      Text="{Binding UpdatePeriod.Text, UpdateSourceTrigger=PropertyChanged}"
                                      Tag="{Binding UpdatePeriod}" LostFocus="Number_LostFocus" />
                             <TextBlock Text="seconds" Style="{StaticResource Caption}" Width="50" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Sharing with other PCs -->
+            <Border Style="{StaticResource Card}" DataContext="{Binding Sharing}">
+                <StackPanel>
+                    <TextBlock Text="Network sharing" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
+
+                    <CheckBox IsChecked="{Binding Enabled}" AutomationProperties.Name="Share with other PCs">
+                        <StackPanel>
+                            <TextBlock Text="Share with other PCs" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <TextBlock Style="{StaticResource Detail}"
+                                       Text="PCs running UPS Tools on your network with the same sharing code find each other, and only one of them connects to each UPS over Bluetooth: the others read it through that one, each with its own scripts and notifications. If that PC goes away, another one takes over. UPSes the others are connected to show up in Add UPS." />
+                        </StackPanel>
+                    </CheckBox>
+
+                    <Grid Margin="28,12,0,0" Visibility="{Binding Enabled, Converter={StaticResource BoolToVisibility}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.ColumnSpan="2" Style="{StaticResource Detail}" Margin="0,0,0,8"
+                                   Text="Give every PC the same code: copy it here, and paste it on the others." />
+                        <TextBlock Grid.Row="1" Text="Sharing code" VerticalAlignment="Center" Margin="0,0,16,0"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                            <TextBox Width="220" FontFamily="Consolas" VerticalContentAlignment="Center" CharacterCasing="Upper"
+                                     Text="{Binding Code, UpdateSourceTrigger=LostFocus}" KeyDown="Name_KeyDown"
+                                     AutomationProperties.Name="Sharing code" />
+                            <Button Content="Copy" Margin="8,0,0,0" Click="CopyCode_Click" />
+                            <Button Content="New code…" Margin="8,0,0,0" Click="NewCode_Click" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,10,0,0" Text="{Binding Status}" TextWrapping="Wrap"
+                                   AutomationProperties.AutomationId="SharingStatus">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource Detail}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasProblem}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                    Visibility="{Binding HasNeighbours, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Style="{StaticResource Detail}">
+                                <Run Text="Other PCs found (this one is" /> <Run Text="{Binding PcName, Mode=OneWay}" /><Run Text="):" />
+                            </TextBlock>
+                            <ItemsControl ItemsSource="{Binding Neighbours}" AutomationProperties.AutomationId="Neighbours" Margin="12,2,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Style="{StaticResource Detail}" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Grid>
                 </StackPanel>

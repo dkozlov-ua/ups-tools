@@ -41,6 +41,9 @@ public sealed class UpsUnit : ObservableObject
     /// <summary>Polls it; null while it isn't monitored.</summary>
     public UpsMonitor? Monitor { get; internal set; }
 
+    /// <summary>Its monitor's connection: over Bluetooth or through another PC; null while it isn't monitored.</summary>
+    internal UpsTools.Core.Sharing.CoordinatedUpsConnection? Connection { get; set; }
+
     /// <summary>Tells its notifications apart from another UPS's (<see cref="Notifier.TagOf"/>).</summary>
     internal string Source => Settings.Id.Length > 8 ? Settings.Id[..8] : Settings.Id;
 

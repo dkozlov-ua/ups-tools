@@ -22,6 +22,22 @@ public sealed class AppSettings
 
     /// <summary>How often every UPS is polled.</summary>
     public int UpdatePeriodSeconds { get; set; } = 60;
+
+    /// <summary>Whether other PCs can watch the UPSes this PC is connected to, and how.</summary>
+    public SharingSettings Sharing { get; set; } = new();
+}
+
+/// <summary>Sharing this PC's UPSes with other PCs (<see cref="UpsTools.Core.Sharing.SharingServer"/>).</summary>
+public sealed class SharingSettings
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>What other PCs need to watch them; made up when sharing is first turned on.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Code { get; set; }
+
+    /// <summary>The TCP port; only settings.json changes it.</summary>
+    public int Port { get; set; } = UpsTools.Core.Sharing.SharingServer.DefaultPort;
 }
 
 /// <summary>One paired UPS and what happens on its events.</summary>
@@ -130,6 +146,9 @@ public sealed class SettingsStore(AppLog log, string? folder = null)
             if (!root.ContainsKey(nameof(AppSettings.Upses))) MoveSingleUps(root, settings, text);
 
             settings.Upses.RemoveAll(ups => ups.Device is null);
+            settings.Sharing ??= new SharingSettings();
+            settings.Sharing.Code = UpsTools.Core.Sharing.SharingCode.Format(settings.Sharing.Code);
+            if (settings.Sharing.Port is < 1 or > 65535) settings.Sharing.Port = UpsTools.Core.Sharing.SharingServer.DefaultPort;
             settings.UpdatePeriodSeconds = Math.Clamp(settings.UpdatePeriodSeconds,
                 AppSettings.MinUpdatePeriodSeconds, AppSettings.MaxUpdatePeriodSeconds);
             foreach (var ups in settings.Upses)

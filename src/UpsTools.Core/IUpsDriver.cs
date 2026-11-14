@@ -30,13 +30,26 @@ public interface IUpsConnection : IAsyncDisposable
 
     /// <summary>Drop the link so the next read reconnects from scratch.</summary>
     Task ResetAsync();
+
+    /// <summary>
+    /// Each read waits for the next reading, which comes at a pace and within a time the connection knows (e.g. one
+    /// through another PC): <see cref="UpsMonitor"/> reads again at once, without a timeout of its own. Asked before
+    /// each read.
+    /// </summary>
+    bool WaitsForReadings => false;
 }
 
 /// <param name="Name">What the device calls itself; its serial number for EcoFlow devices.</param>
-public sealed record DiscoveredUps(string DriverId, string Address, string Name, string Model, short? Rssi)
+/// <param name="ConnectedTo">Found on the network: the PC connected to it, which this PC would read it through.</param>
+/// <param name="Label">Found on the network: what the PC connected to it calls it.</param>
+public sealed record DiscoveredUps(string DriverId, string Address, string Name, string Model, short? Rssi,
+    string? ConnectedTo = null, string? Label = null)
 {
     /// <summary>The brand and model, e.g. "Bluetti EL100V2".</summary>
     public string Title => UpsDrivers.Title(DriverId, Model);
+
+    /// <summary>Where it was found: its signal strength, or the PC connected to it.</summary>
+    public string Where => ConnectedTo is { } pc ? $"on {pc}" : Rssi is { } rssi ? $"{rssi} dBm" : "";
 }
 
 /// <param name="Name">What the device calls itself; its serial number for EcoFlow devices.</param>

@@ -63,6 +63,9 @@ public sealed class UpsMonitor : IAsyncDisposable
     public event Action<UpsLinkState>? LinkStateChanged;
     public event Action<string>? Log;
 
+    /// <summary>A read failed, with why; raised on every failed read, unlike <see cref="Log"/>.</summary>
+    public event Action<string>? ReadFailed;
+
     public UpsLinkState LinkState { get; private set; } = UpsLinkState.Connecting;
     public UpsStatus? LastStatus { get; private set; }
 
@@ -129,7 +132,7 @@ public sealed class UpsMonitor : IAsyncDisposable
             if (!_paused) await PollOnceAsync();
 
             // Waiting out a grid loss: look again when "Grid lost" would be due (a little after: timers can fire early).
-            var wait = _period;
+            var wait = _connection.WaitsForReadings ? TimeSpan.Zero : _period;
             if (_tracker.GridLostDue is { } due && LastStatus is { } last)
             {
                 var left = due - last.Timestamp + DueMargin;
@@ -166,7 +169,7 @@ public sealed class UpsMonitor : IAsyncDisposable
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, abort);
-            timeout.CancelAfter(_readTimeout);
+            if (!_connection.WaitsForReadings) timeout.CancelAfter(_readTimeout);
             status = _load.Add(await _connection.ReadAsync(timeout.Token));
             LastStatus = status;
             _lastError = null;
@@ -188,6 +191,7 @@ public sealed class UpsMonitor : IAsyncDisposable
             var message = ex is OperationCanceledException ? "timed out" : ex.Message;
             if (message != _lastError) Log?.Invoke($"UPS read failed: {message}");
             _lastError = message;
+            ReadFailed?.Invoke(message);
             var unreachable = _tracker.Reachable == false;
             events = _tracker.OnFailure(_clock());
             if (!unreachable && _tracker.BatteryLowDue is not null)

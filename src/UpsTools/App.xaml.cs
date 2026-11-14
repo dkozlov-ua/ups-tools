@@ -72,6 +72,7 @@ public partial class App : Application
         SessionEnding += OnSessionEnding;
 
         _controller.Log.Info($"UPS Tools started ({_controller.Configuration.Version})");
+        _controller.StartSharing(); // first: the PCs agree who connects before anyone does
         _controller.StartMonitoring();
 
         if (!e.Args.Contains(StartupRegistration.BackgroundArgument, StringComparer.OrdinalIgnoreCase))

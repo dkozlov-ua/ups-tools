@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Threading;
 using UpsTools.Core;
+using UpsTools.Core.Sharing;
 using UpsTools.Services;
 using UpsTools.ViewModels;
 using UpsTools.Views;
@@ -21,6 +22,8 @@ public sealed class AppController : ObservableObject
     private readonly DashboardViewModel _noUps = new();
     private ITray? _tray;
     private INotifications? _notifier;
+    private SharingServer? _server;
+    private volatile UpsCoordinator? _coordinator;
 
     public AppController(Dispatcher ui) : this(ui, new AppLog())
     {
@@ -54,6 +57,11 @@ public sealed class AppController : ObservableObject
         Log.EntryAdded += entry => _ui.InvokeAsync(() => Activity.Post(entry));
 
         Configuration = new ConfigurationViewModel(Settings, Log, Save, ApplyPeriod);
+        Sharing = new SharingViewModel(Settings.Sharing, () =>
+        {
+            Save();
+            StartSharing();
+        });
 
         foreach (var ups in Settings.Upses) Upses.Add(CreateUnit(ups));
         Upses.CollectionChanged += (_, _) =>
@@ -73,6 +81,12 @@ public sealed class AppController : ObservableObject
 
     /// <summary>The app-wide settings.</summary>
     public ConfigurationViewModel Configuration { get; }
+
+    /// <summary>Sharing this PC's UPSes with other PCs.</summary>
+    public SharingViewModel Sharing { get; }
+
+    /// <summary>What this PC shares: the UPSes it is connected to itself, with their latest readings.</summary>
+    public SharingHub Hub { get; } = new();
 
     /// <summary>The paired UPSes, in the order they were paired.</summary>
     public ObservableCollection<UpsUnit> Upses { get; } = [];
@@ -131,9 +145,139 @@ public sealed class AppController : ObservableObject
             unit.Title = title;
             unit.LogPrefix = HasSeveral ? title + ": " : "";
             unit.Dashboard.SetDevice(unit.Device, title: title);
+            Hub.Rename(unit.Device, title);
+            _coordinator?.Rename(unit.Device, title);
         }
         UpdateTray();
     }
+
+    /// <summary>
+    /// Starts sharing with the other PCs on the network, or stops, as the settings say (again, e.g. with a new code).
+    /// While sharing, this PC finds the others that share with the same code, and they agree which one connects to
+    /// each UPS over Bluetooth (<see cref="UpsCoordinator"/>); the others read it through that one (<see cref="SharingServer"/>).
+    /// </summary>
+    public void StartSharing()
+    {
+        StopSharing();
+        var sharing = Settings.Sharing;
+        if (!sharing.Enabled)
+        {
+            Sharing.Show(null);
+            return;
+        }
+        if (sharing.Code is null)
+        {
+            sharing.Code = SharingCode.New();
+            Save();
+        }
+
+        SharingServer? server = null;
+        UpsCoordinator? coordinator = null;
+        try
+        {
+            var loopback = SharingServer.LoopbackFromEnvironment;
+            server = new SharingServer(Hub, sharing.Code, sharing.Port, loopback, Log.Info);
+            try
+            {
+                server.Start();
+            }
+            catch (System.Net.Sockets.SocketException ex) when (ex.SocketErrorCode is System.Net.Sockets.SocketError.AddressAlreadyInUse
+                or System.Net.Sockets.SocketError.AccessDenied)
+            {
+                // Another program (or another copy of UPS Tools on this PC) has the port, or Windows keeps it for
+                // itself: any other will do, as the announcements say which one it is.
+                server.Dispose();
+                server = new SharingServer(Hub, sharing.Code, 0, loopback, Log.Info);
+                server.Start();
+            }
+            coordinator = new UpsCoordinator(Hub.Instance, Hub.Pc, sharing.Code, server.Port, new MulticastTransport(sharing.Port, loopback),
+                Log.Info, CoordinatorTimings);
+            coordinator.RouteChanged += OnRouteChanged;
+            coordinator.NeighboursChanged += () => _ui.InvokeAsync(ShowNeighbours);
+            coordinator.Start();
+            (_server, _coordinator) = (server, coordinator);
+            Log.Info($"Sharing with the other PCs on the network (port {sharing.Port}, readings on {server.Port})");
+            Sharing.Show(server.Port);
+        }
+        catch (Exception ex)
+        {
+            coordinator?.Dispose();
+            server?.Dispose();
+            Log.Warn($"Could not share with the other PCs: {ex.Message}");
+            Sharing.Show(null, ex.Message);
+            return;
+        }
+
+        // The UPSes monitored already: one this PC is connected to stays so, unless another PC is too.
+        foreach (var unit in Upses.Where(u => u.Monitor is not null))
+            coordinator.Join(unit.Device, unit.Title,
+                connected: unit.Connection?.LastReadDirect == true && unit.Monitor!.LinkState == UpsLinkState.Online);
+        foreach (var unit in Upses) ApplyRoute(unit);
+    }
+
+    /// <summary>How fast the PCs agree; the defaults unless a test says otherwise.</summary>
+    internal static UpsCoordinator.Timings CoordinatorTimings { get; set; } = UpsCoordinator.Timings.Default;
+
+    /// <summary>The port other PCs reach this one on, while it shares its UPSes.</summary>
+    internal int? SharingPort => _server?.Port;
+
+    /// <summary>
+    /// Stops sharing: says goodbye to the other PCs (they take over the UPSes this PC was connected to), and connects
+    /// to every UPS over Bluetooth again.
+    /// </summary>
+    private void StopSharing()
+    {
+        var coordinator = _coordinator;
+        _coordinator = null;
+        coordinator?.Dispose();
+        _server?.Dispose();
+        _server = null;
+        if (coordinator is null) return;
+        foreach (var unit in Upses) ApplyRoute(unit);
+        ShowNeighbours();
+    }
+
+    /// <summary>How the UPS is read now: over Bluetooth, unless sharing says through another PC.</summary>
+    private UpsRoute RouteOf(PairedUps device) => _coordinator?.RouteOf(device) ?? UpsRoute.Direct;
+
+    /// <summary>A UPS's route changed (on a background thread): its connection follows at once, the rest on the UI thread.</summary>
+    private void OnRouteChanged(PairedUps device, UpsRoute route)
+    {
+        if (_connections.TryGetValue(SharingHub.KeyOf(device), out var connection)) connection.RouteChanged();
+        _ui.InvokeAsync(() =>
+        {
+            if (Find(device) is { } unit) ApplyRoute(unit, connected: true);
+        });
+    }
+
+    /// <summary>
+    /// Shows how a UPS is read, and shares its readings with the other PCs while this PC is the one connected to it.
+    /// </summary>
+    /// <param name="connected">Its connection has been told already.</param>
+    private void ApplyRoute(UpsUnit unit, bool connected = false)
+    {
+        var route = RouteOf(unit.Device);
+        if (!connected) unit.Connection?.RouteChanged();
+        if (route.Kind == UpsRouteKind.Direct && unit.Monitor is not null)
+            Hub.Share(unit.Device, unit.Title, TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds));
+        else
+            Hub.Unshare(unit.Device);
+        unit.Configuration.Route = route.Kind switch
+        {
+            UpsRouteKind.Through => $"through {route.Peer!.Pc}",
+            UpsRouteKind.Waiting => "waiting for the other PCs",
+            _ => "via Bluetooth LE",
+        };
+        unit.Dashboard.SetThrough(unit.Device, route.Peer?.Pc, unit.Title);
+    }
+
+    private void ShowNeighbours() => Sharing.ShowNeighbours(_coordinator?.Neighbours ?? []);
+
+    /// <summary>The UPSes other PCs are connected to, for the pairing dialog.</summary>
+    public IReadOnlyList<NetworkUps> NetworkUpses => _coordinator?.NetworkUpses ?? [];
+
+    /// <summary>The connection of each monitored UPS, by <see cref="SharingHub.KeyOf"/>.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CoordinatedUpsConnection> _connections = new();
 
     /// <summary>Starts monitoring every paired UPS that isn't monitored yet.</summary>
     public void StartMonitoring()
@@ -146,11 +290,12 @@ public sealed class AppController : ObservableObject
     {
         if (unit.Monitor is not null) return;
 
-        IUpsConnection connection;
+        IUpsConnection bluetooth;
+        var device = unit.Device;
         try
         {
-            var driver = _drivers.Find(unit.Device.DriverId) ?? throw new NotSupportedException($"Unknown UPS driver '{unit.Device.DriverId}'");
-            connection = driver.CreateConnection(unit.Device);
+            var driver = _drivers.Find(device.DriverId) ?? throw new NotSupportedException($"Unknown UPS driver '{device.DriverId}'");
+            bluetooth = driver.CreateConnection(device);
         }
         catch (Exception ex)
         {
@@ -159,8 +304,29 @@ public sealed class AppController : ObservableObject
             return;
         }
 
+        // Over Bluetooth, or through the PC connected to it, as the PCs sharing on the network agree.
+        var key = SharingHub.KeyOf(device);
+        var connection = new CoordinatedUpsConnection(bluetooth, () => RouteOf(device),
+            peer => new NetworkUpsConnection(peer.Address, peer.Port, Settings.Sharing.Code ?? "", key, peer.Pc));
+        unit.Connection = connection;
+        _connections[key] = connection;
+
         var monitor = new UpsMonitor(connection, TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds)) { Rules = unit.Settings.Rules() };
         monitor.Log += message => Log.Info(unit.LogPrefix + message);
+
+        // The readings of a UPS this PC is connected to go to the PCs that read it through this one.
+        monitor.StatusUpdated += status =>
+        {
+            if (connection.LastReadDirect) Hub.Publish(device, status);
+        };
+        monitor.ReadFailed += error =>
+        {
+            if (connection.LastReadDirect) Hub.PublishFailure(device, error);
+        };
+        monitor.LinkStateChanged += state =>
+        {
+            if (connection.LastReadDirect) _coordinator?.ReportLink(device, state != UpsLinkState.Unreachable);
+        };
         monitor.StatusUpdated += status => _ui.InvokeAsync(() =>
         {
             if (unit.Monitor != monitor) return;
@@ -187,6 +353,8 @@ public sealed class AppController : ObservableObject
 
         unit.Monitor = monitor;
         unit.Dashboard.SetLink(LinkStatus.Connecting);
+        _coordinator?.Join(device, unit.Title);
+        ApplyRoute(unit);
         monitor.Start();
     }
 
@@ -194,6 +362,7 @@ public sealed class AppController : ObservableObject
     private void ApplyPeriod()
     {
         var period = TimeSpan.FromSeconds(Settings.UpdatePeriodSeconds);
+        Hub.SetPeriod(period);
         foreach (var monitor in Upses.Select(u => u.Monitor).OfType<UpsMonitor>())
             if (monitor.Period != period) monitor.Period = period;
     }
@@ -207,24 +376,30 @@ public sealed class AppController : ObservableObject
     /// <summary>Stops monitoring every UPS.</summary>
     public Task StopMonitoringAsync() => Task.WhenAll(Upses.ToList().Select(StopMonitoringAsync));
 
-    private static async Task StopMonitoringAsync(UpsUnit unit)
+    private async Task StopMonitoringAsync(UpsUnit unit)
     {
         var monitor = unit.Monitor;
         unit.Monitor = null;
         unit.GridLostAt = null;
-        if (monitor is not null) await monitor.DisposeAsync();
+        if (monitor is null) return;
+        _coordinator?.Leave(unit.Device);
+        Hub.Unshare(unit.Device);
+        if (unit.Connection is { } connection) _connections.TryRemove(new(SharingHub.KeyOf(unit.Device), connection));
+        unit.Connection = null;
+        await monitor.DisposeAsync();
     }
 
     /// <summary>
     /// Adds a UPS, or updates the one already paired at that address (e.g. with another user ID), and starts
-    /// monitoring. Call with monitoring stopped (the pairing dialog needs the Bluetooth link to itself).
+    /// monitoring. Call with that UPS not monitored (<see cref="PairAsync"/>).
     /// </summary>
-    public UpsUnit Pair(PairedUps ups)
+    /// <param name="label">For a UPS not paired yet: what to call it, e.g. what the PC connected to it calls it.</param>
+    public UpsUnit Pair(PairedUps ups, string? label = null)
     {
-        var unit = Upses.FirstOrDefault(u => u.Device.DriverId == ups.DriverId && u.Device.Address == ups.Address);
+        var unit = Find(ups);
         if (unit is null)
         {
-            var settings = new UpsSettings { Device = ups };
+            var settings = new UpsSettings { Device = ups, Label = string.IsNullOrWhiteSpace(label) || label == ups.Title ? null : label };
             Settings.Upses.Add(settings);
             unit = CreateUnit(settings);
             Upses.Add(unit);
@@ -241,6 +416,21 @@ public sealed class AppController : ObservableObject
         Selected = unit;
         StartMonitoring();
         return unit;
+    }
+
+    /// <summary>The UPS paired as <paramref name="device"/> (the same driver and address), if any.</summary>
+    public UpsUnit? Find(PairedUps device) =>
+        Upses.FirstOrDefault(u => u.Device.DriverId == device.DriverId && u.Device.Address == device.Address);
+
+    /// <summary>
+    /// <see cref="Pair"/>, after stopping the monitor of the same UPS if it is paired already; it keeps its scripts and
+    /// settings.
+    /// </summary>
+    /// <param name="label">For a UPS not paired yet: what to call it, e.g. what the PC connected to it calls it.</param>
+    public async Task<UpsUnit> PairAsync(PairedUps device, string? label = null)
+    {
+        if (Find(device) is { } existing) await StopMonitoringAsync(existing);
+        return Pair(device, label);
     }
 
     /// <summary>
@@ -363,14 +553,21 @@ public sealed class AppController : ObservableObject
     private string TheUpses => HasSeveral ? "the UPSes" : "the UPS";
 
     /// <summary>The PC is about to sleep or hibernate (Windows doesn't say which): close the links now.</summary>
-    public void OnGoingToSleep() => CloseLinks("PC is going to sleep or hibernate", "before sleep");
+    public void OnGoingToSleep()
+    {
+        CloseLinks("PC is going to sleep or hibernate", "before sleep");
+        StopSharing(); // the other PCs take over the UPSes this PC was connected to
+    }
 
     /// <summary>
     /// Windows is shutting down, restarting or signing out, and the app is about to end with it: close the links now
     /// rather than leave them to the Bluetooth stack, which can keep a UPS thinking it is still connected.
     /// </summary>
-    public void OnSessionEnding(bool signingOut) =>
+    public void OnSessionEnding(bool signingOut)
+    {
         CloseLinks(signingOut ? "Signing out of Windows" : "PC is shutting down", "before shutting down");
+        StopSharing(); // the other PCs take over the UPSes this PC was connected to
+    }
 
     /// <summary>Closes every link, waiting a few seconds at most (Windows won't wait longer); the monitors stay paused.</summary>
     private void CloseLinks(string why, string when)
@@ -394,6 +591,7 @@ public sealed class AppController : ObservableObject
     {
         Log.Info($"PC resumed from sleep; reconnecting to {TheUpses} in {UpsMonitor.DefaultResumeSettle.TotalSeconds:0} s");
         foreach (var monitor in Monitors) monitor.NotifyResumed();
+        if (Settings.Sharing.Enabled) StartSharing();
     }
 
     /// <param name="gridGoneSince">For "Grid lost": when the grid went, if earlier than the reading (a delay was waited out).</param>

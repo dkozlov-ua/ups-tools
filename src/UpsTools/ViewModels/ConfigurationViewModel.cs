@@ -107,7 +107,17 @@ public sealed class UpsConfigurationViewModel : ObservableObject
     public string DefaultTitle => _ups.Device.Title;
 
     /// <summary>What it calls itself, its address and how UPS Tools reaches it.</summary>
-    public string Detail => $"{_ups.Device.Name} · {_ups.Device.Address} · via Bluetooth LE";
+    public string Detail => $"{_ups.Device.Name} · {_ups.Device.Address} · {Route}";
+
+    /// <summary>How it is read: "via Bluetooth LE", or through which PC (<see cref="UpsTools.Core.Sharing.UpsCoordinator"/>).</summary>
+    public string Route
+    {
+        get;
+        set
+        {
+            if (Set(ref field, value)) OnPropertyChanged(nameof(Detail));
+        }
+    } = "via Bluetooth LE";
 
     /// <summary>What the user calls it; empty: <see cref="DefaultTitle"/>.</summary>
     public string Label

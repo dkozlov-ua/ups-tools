@@ -18,6 +18,10 @@ public sealed class LoadAverage(TimeSpan window)
     public TimeSpan Window { get; } = window;
 
     /// <summary>Adds the reading's output power and returns it with <see cref="UpsStatus.AverageOutputW"/> set.</summary>
+    /// <remarks>
+    /// A reading that already has an average (one shared by another PC, which worked it out over its own readings)
+    /// keeps it, and still counts towards this window.
+    /// </remarks>
     public UpsStatus Add(UpsStatus status)
     {
         if (status.TotalOutputW is not { } watts) return status;
@@ -28,6 +32,6 @@ public sealed class LoadAverage(TimeSpan window)
         _samples.Enqueue((status.Timestamp, watts));
         while (_samples.Peek().At <= status.Timestamp - Window) _samples.Dequeue();
 
-        return status with { AverageOutputW = _samples.Average(s => s.Watts) };
+        return status.AverageOutputW is null ? status with { AverageOutputW = _samples.Average(s => s.Watts) } : status;
     }
 }

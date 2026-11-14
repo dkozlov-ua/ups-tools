@@ -97,7 +97,18 @@ public sealed class DashboardViewModel : ObservableObject
             DeviceTitle == device.Title ? null : device.Title,
             _serial is null ? null : $"Serial {_serial}",
             device.Address,
+            _through is null ? null : $"through {_through}",
         }.OfType<string>());
+    }
+
+    /// <summary>The PC the UPS is read through, if not over Bluetooth.</summary>
+    private string? _through;
+
+    /// <summary>Shows that the UPS is read through another PC (<paramref name="pc"/>), or not (null).</summary>
+    public void SetThrough(PairedUps device, string? pc, string title)
+    {
+        _through = pc;
+        SetDevice(device, title: title);
     }
 
     private string? _serial;

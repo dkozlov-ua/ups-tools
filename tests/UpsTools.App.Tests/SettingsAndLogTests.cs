@@ -238,7 +238,7 @@ public sealed class SettingsAndLogTests : IDisposable
         // Saved in the new form at once, with the old file kept.
         Assert.Equal(old, File.ReadAllText(Path.Combine(_store.Folder, SettingsStore.SingleUpsBackupName)));
         using var doc = JsonDocument.Parse(File.ReadAllText(_store.FilePath));
-        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds"], doc.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds", "Sharing"], doc.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Equal(ups.Id, _store.Load().Upses.Single().Id);
         Assert.Empty(_log.Recent);
     }
@@ -389,7 +389,7 @@ public sealed class SettingsAndLogTests : IDisposable
     {
         _store.Save(With(_ => { }));
         using var doc = JsonDocument.Parse(File.ReadAllText(_store.FilePath));
-        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds"], doc.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds", "Sharing"], doc.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Contains("\n  \"CloseToTray\"", File.ReadAllText(_store.FilePath));
         Assert.Equal(["Id", "Device", "BatteryLowPercent", "BatteryLowMinutes", "GridLostDelaySeconds", "UnreachableOnBatteryMinutes", "Scripts", "Notifications"],
             doc.RootElement.GetProperty("Upses")[0].EnumerateObject().Select(p => p.Name));
