@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Windows;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using UpsTools.Services;
 
 namespace UpsTools;
@@ -21,6 +20,7 @@ public partial class App : Application
     private TrayIcon? _tray;
     private Notifier? _notifier;
     private MainWindow? _window;
+    private PowerWatcher? _power;
     private bool _exiting;
     private bool _trayHintShown;
 
@@ -68,7 +68,11 @@ public partial class App : Application
         _tray = new TrayIcon(ShowMainWindow, () => _ = ExitAsync());
         _notifier = new Notifier(_controller.Log, _tray, () => Dispatcher.InvokeAsync(ShowMainWindow));
         _controller.AttachTray(_tray, _notifier);
-        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        _power = new PowerWatcher();
+        _power.Suspending += OnSuspending;
+        _power.Resumed += () => Dispatcher.InvokeAsync(() => _controller?.OnResumedFromSleep());
+        _power.Thawed += frozen => Dispatcher.InvokeAsync(() => _controller?.OnThawed(frozen));
+        if (!_power.SeesModernStandby) _controller.Log.Info("Windows won't say when the PC goes into Modern Standby");
         SessionEnding += OnSessionEnding;
 
         _controller.Log.Info($"UPS Tools started ({_controller.Configuration.Version})");
@@ -155,11 +159,13 @@ public partial class App : Application
         }
     }
 
-    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    private void OnSuspending()
     {
-        // Suspend is handled right here, before Windows goes on to sleep; the link has to be closed by then.
-        if (e.Mode == PowerModes.Suspend) _controller?.OnGoingToSleep();
-        else if (e.Mode == PowerModes.Resume) Dispatcher.InvokeAsync(() => _controller?.OnResumedFromSleep());
+        // Handled before this returns, as Windows goes on to sleep (or suspends the app) after that; the links have
+        // to be closed by then. On the UI thread, where the controller works, but not for longer than Windows waits.
+        if (_exiting) return;
+        try { Dispatcher.Invoke(() => _controller?.OnGoingToSleep(), DispatcherPriority.Send, CancellationToken.None, TimeSpan.FromSeconds(5)); }
+        catch (Exception ex) { _controller?.Log.Info($"Getting ready for sleep failed: {ex.GetBaseException().Message}"); }
     }
 
     private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e)
@@ -168,7 +174,7 @@ public partial class App : Application
         // process soon after, so the links are closed right here, as before sleep.
         if (_exiting) return;
         _exiting = true;
-        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        _power?.Dispose();
         if (_controller is not null)
         {
             _controller.OnSessionEnding(signingOut: e.ReasonSessionEnding == ReasonSessionEnding.Logoff);
@@ -183,7 +189,7 @@ public partial class App : Application
         if (_exiting) return;
         _exiting = true;
 
-        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        _power?.Dispose();
         _window?.Close();
 
         if (_controller is not null)

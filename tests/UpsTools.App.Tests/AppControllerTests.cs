@@ -747,6 +747,18 @@ public sealed class AppControllerTests : IDisposable
         Assert.Contains(_log.Recent, e => e.Message == "PC is going to sleep or hibernate; disconnecting from the UPS");
     }
 
+    [Fact]
+    public async Task Being_frozen_by_windows_without_a_word_reconnects()
+    {
+        var controller = await Start();
+        await Online();
+        await UiThread.Run(() => controller.OnThawed(TimeSpan.FromMinutes(42)));
+        Assert.Equal(1, _ups.Resets);
+        Assert.Contains(_log.Recent,
+            e => e.Message == "Windows paused UPS Tools for 42 min (Modern Standby?); reconnecting to the UPS in 15 s");
+        Assert.Equal(LinkStatus.Connecting, await Ui(() => controller.Dashboard.Link));
+    }
+
     [Theory]
     [InlineData(false, "PC is shutting down; disconnecting from the UPSes")]
     [InlineData(true, "Signing out of Windows; disconnecting from the UPSes")]

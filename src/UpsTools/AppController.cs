@@ -552,7 +552,10 @@ public sealed class AppController : ObservableObject
 
     private string TheUpses => HasSeveral ? "the UPSes" : "the UPS";
 
-    /// <summary>The PC is about to sleep or hibernate (Windows doesn't say which): close the links now.</summary>
+    /// <summary>
+    /// The PC is about to sleep or hibernate, or a laptop goes into Modern Standby (Windows doesn't say which): close
+    /// the links now, before Windows suspends the app (and, on a laptop without network in standby, cuts it off).
+    /// </summary>
     public void OnGoingToSleep()
     {
         CloseLinks("PC is going to sleep or hibernate", "before sleep");
@@ -587,9 +590,21 @@ public sealed class AppController : ObservableObject
         }
     }
 
-    public void OnResumedFromSleep()
+    public void OnResumedFromSleep() => Reconnect("PC resumed from sleep");
+
+    /// <summary>
+    /// Windows froze the app for a while without saying the PC was going to sleep (Modern Standby can): the links it
+    /// had may be dead, and the other PCs sharing the UPSes have stopped counting on this one, so start afresh.
+    /// </summary>
+    public void OnThawed(TimeSpan frozen)
     {
-        Log.Info($"PC resumed from sleep; reconnecting to {TheUpses} in {UpsMonitor.DefaultResumeSettle.TotalSeconds:0} s");
+        var minutes = Math.Max(1, (int)Math.Round(frozen.TotalMinutes));
+        Reconnect($"Windows paused UPS Tools for {minutes} min (Modern Standby?)");
+    }
+
+    private void Reconnect(string why)
+    {
+        Log.Info($"{why}; reconnecting to {TheUpses} in {UpsMonitor.DefaultResumeSettle.TotalSeconds:0} s");
         foreach (var monitor in Monitors) monitor.NotifyResumed();
         if (Settings.Sharing.Enabled) StartSharing();
     }

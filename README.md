@@ -92,7 +92,10 @@ Smart Extra Battery when one is plugged in; it doesn't report its input voltage 
 while its AC input is plugged in.
 
 A UPS accepts a single Bluetooth connection: while UPS Tools is connected to it, its phone app can only reach it over
-Wi-Fi, and another PC can only reach it through this one ([Network sharing](#network-sharing)).
+Wi-Fi, and another PC can only reach it through this one ([Network sharing](#network-sharing)). UPS Tools lets go of it
+when the PC sleeps, hibernates, shuts down or signs out, and when a laptop goes into Modern Standby (with or without
+network in standby), and connects again once the PC is back. If Windows suspends UPS Tools without saying so, it
+notices once it runs again and reconnects from scratch.
 
 ## Network sharing
 
@@ -105,8 +108,8 @@ the same **sharing code** (the first PC makes one up: copy it, and paste it on t
 - For each UPS, only one PC connects over Bluetooth. The others read it through that PC over TCP (port 47870, or
   another free one), getting each reading as soon as that PC has it, and each runs its own scripts and notifications
   with its own event limits. The dashboard and the list of UPSes say which PC a UPS is read through.
-- When the PCs start together, the one that connects is chosen by a fixed order. If it exits, sleeps, shuts down or
-  turns sharing off, it tells the others, and one of them connects at once; if it disappears without a word (e.g. it
+- When the PCs start together, the one that connects is chosen by a fixed order. If it exits, sleeps (Modern Standby
+  included), shuts down or turns sharing off, it tells the others, and one of them connects at once; if it disappears without a word (e.g. it
   lost its network), the others take over after about 17 s. A PC that is connected but has had the UPS unreachable for
   2 minutes (e.g. out of Bluetooth range) lets another one try.
 - **Add UPS…** lists the UPSes the other PCs are connected to: pairing one takes its name from that PC and doesn't
