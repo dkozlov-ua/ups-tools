@@ -31,6 +31,9 @@ internal sealed class GattLink : IBleLink
         _device.ConnectionStatusChanged += OnConnectionStatusChanged;
     }
 
+    /// <summary>How long to listen for a device Windows doesn't know (any more) before giving up.</summary>
+    private static readonly TimeSpan FindDuration = TimeSpan.FromSeconds(8);
+
     public event Action<byte[]>? Received;
     public event Action? Disconnected;
 
@@ -45,8 +48,17 @@ internal sealed class GattLink : IBleLink
         List<GattDeviceService> services = [];
         try
         {
-            device = await BluetoothLEDevice.FromBluetoothAddressAsync(address).AsTask(ct)
-                     ?? throw new IOException("Bluetooth device not found. Is it powered on and in range?");
+            device = await BluetoothLEDevice.FromBluetoothAddressAsync(address).AsTask(ct);
+            if (device is null)
+            {
+                // Windows knows only the devices it heard lately (it forgets one that was connected to another PC
+                // for a while, as it stops advertising then), so listen for it first, as adding the UPS did.
+                trace?.Invoke("not known to Windows: scanning for it");
+                if (await BleAdapter.HearAsync(address, FindDuration, ct))
+                    device = await BluetoothLEDevice.FromBluetoothAddressAsync(address).AsTask(ct);
+                if (device is null)
+                    throw new IOException("Bluetooth device not found. Is it powered on, in range, and not connected to another PC or phone?");
+            }
             session = await GattSession.FromDeviceIdAsync(device.BluetoothDeviceId).AsTask(ct);
             session.MaintainConnection = true;
 

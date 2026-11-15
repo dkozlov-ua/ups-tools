@@ -342,7 +342,9 @@ public sealed class UpsCoordinator : IDisposable
                 }
                 break;
 
-            case UpsRole.Resting when now - local.RoleSince >= _timings.Rest:
+            // Rested long enough, or nobody else is left to try (the others that wanted it went away).
+            case UpsRole.Resting when now - local.RoleSince >= _timings.Rest
+                || !fresh.Any(p => p.RoleOf(local.Key) is UpsRole.Wanting or UpsRole.Watching or UpsRole.Holding):
                 SetRole(local, UpsRole.Wanting, now);
                 break;
         }

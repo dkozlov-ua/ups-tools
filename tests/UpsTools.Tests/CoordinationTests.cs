@@ -230,6 +230,21 @@ public sealed class CoordinationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_pc_letting_another_try_tries_again_once_that_one_is_gone()
+    {
+        var a = Start("a");
+        var b = Start("b");
+        a.Coordinator.Join(Ups, "Desk");
+        b.Coordinator.Join(Ups, "Desk");
+        await Until(() => IsThrough(b, "PC-A"), "b to read through a");
+        a.Coordinator.ReportLink(Ups, online: false);
+        await Until(() => IsThrough(a, "PC-B"), "a to let b try");
+
+        b.Node.Cut = true; // e.g. the laptop went into Modern Standby: well before a's rest (30 s here) is over
+        await Until(() => a.Route == UpsRoute.Direct, "a to connect again");
+    }
+
+    [Fact]
     public async Task Unreachable_and_alone_it_keeps_trying()
     {
         var a = Start("a");

@@ -17,6 +17,21 @@ internal static class BleAdapter
         if (radio is not null && radio.State != RadioState.On) throw new IOException("Bluetooth is turned off");
     }
 
+    /// <summary>Listens until the device is heard (true) or the duration elapses (false).</summary>
+    public static async Task<bool> HearAsync(ulong address, TimeSpan duration, CancellationToken cancellationToken)
+    {
+        using var heard = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var found = 0;
+        await ScanAsync(args =>
+        {
+            if (args.BluetoothAddress != address || Interlocked.Exchange(ref found, 1) == 1) return;
+            try { heard.Cancel(); }
+            catch (ObjectDisposedException) { /* heard just as the scan ended */ }
+        }, duration, heard.Token);
+        cancellationToken.ThrowIfCancellationRequested();
+        return found == 1;
+    }
+
     /// <summary>Reports every advertisement heard (scan responses too) until the duration elapses or the token is cancelled.</summary>
     public static async Task ScanAsync(Action<BluetoothLEAdvertisementReceivedEventArgs> onReceived, TimeSpan duration,
         CancellationToken cancellationToken)
