@@ -53,6 +53,25 @@ public sealed class MultipleUpsUiTests : IDisposable
     }
 
     [Fact]
+    public void Forgetting_the_ups_shown_shows_the_one_left()
+    {
+        _app.SimulateSecond(new { GridPresent = true, BatteryPercent = 40, Serial = "SIM0002", AcOutputW = 60 });
+        _app.Seed(second: true, editSecond: s => s["Label"] = "Office");
+        var window = _app.Start()!;
+        window.HasText("DeviceTitle", "Bluetti Simulator");
+
+        var configuration = _app.Tab("Configuration");
+        configuration.ByName("Forget Bluetti Simulator").InvokeAsync();
+        Ui.Answer(_app.Pid, "Yes");
+        Ui.Until(() => _app.UpsCount() == 1, "the UPS to be forgotten");
+        configuration.HasText("UpsSettingsTitle", "Office");
+
+        var dashboard = _app.Tab("Dashboard");
+        dashboard.HasText("DeviceTitle", "Office");
+        dashboard.HasText("BatteryValue", "40 %");
+    }
+
+    [Fact]
     public void A_second_ups_is_added_from_configuration_and_named()
     {
         _app.SimulateSecond(new { GridPresent = true, BatteryPercent = 40 });

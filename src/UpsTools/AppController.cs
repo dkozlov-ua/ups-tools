@@ -445,10 +445,12 @@ public sealed class AppController : ObservableObject
         foreach (var action in unit.Settings.Scripts.Values.SelectMany(list => list).Where(a => a.RunElevated))
             await Elevated.UnregisterAsync(action); // a task left behind goes with the uninstaller
 
+        // Another one first: the window's pickers, bound to Selected, set it to nothing as their item goes.
+        if (Selected == unit) Selected = Upses.FirstOrDefault(u => u != unit);
         Settings.Upses.Remove(unit.Settings);
         Upses.Remove(unit);
         Save();
-        if (Selected == unit) Selected = Upses.FirstOrDefault();
+        Selected ??= Upses.FirstOrDefault();
         Log.Info($"Forgot {unit.Device.Name}");
         RefreshTitles();
     }

@@ -64,6 +64,19 @@ public sealed class PowerWatcherTests
     }
 
     [Fact]
+    public void Waking_up_told_by_windows_first_is_not_also_a_thaw()
+    {
+        var watcher = Watcher();
+        watcher.OnCheck(Ms(5));
+        watcher.OnSuspend();
+        watcher.OnResume(); // Windows said it before the clock check ran
+        watcher.OnCheck(Ms(5 + 3600));
+        watcher.OnCheck(Ms(5 + 3605));
+        watcher.OnCheck(Ms(5 + 3605 + 600)); // a later freeze without a word still counts
+        Assert.Equal(["suspending", "resumed", "thawed after 600 s"], _heard);
+    }
+
+    [Fact]
     public void Windows_says_when_this_pc_goes_into_modern_standby()
     {
         using var watcher = new PowerWatcher();

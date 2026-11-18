@@ -30,6 +30,7 @@ public sealed class PowerWatcher : IDisposable
     private readonly bool _systemEvents;
     private readonly ManualResetEvent _disposed = new(false);
     private int _asleep;
+    private int _wokeSinceCheck; // the gap the next clock check finds is the sleep Windows told of
     private long _lastCheck;
 
     /// <summary>The PC is about to sleep: close what has to be closed before this returns.</summary>
@@ -91,16 +92,21 @@ public sealed class PowerWatcher : IDisposable
     internal void OnResume()
     {
         // Windows may say it twice (woken automatically, then by the user), and the clock check may have said it first.
-        if (Interlocked.Exchange(ref _asleep, 0) == 1) Resumed?.Invoke();
+        if (Interlocked.Exchange(ref _asleep, 0) == 1)
+        {
+            Volatile.Write(ref _wokeSinceCheck, 1);
+            Resumed?.Invoke();
+        }
     }
 
     /// <param name="now">Milliseconds, counting the time the PC spends asleep (<see cref="Environment.TickCount64"/>).</param>
     internal void OnCheck(long now)
     {
         var gap = TimeSpan.FromMilliseconds(now - Interlocked.Exchange(ref _lastCheck, now));
+        var woke = Interlocked.Exchange(ref _wokeSinceCheck, 0) == 1;
         if (gap < FrozenAfter) return;
         if (Volatile.Read(ref _asleep) == 1) OnResume(); // woke up before Windows said so
-        else Thawed?.Invoke(gap);
+        else if (!woke) Thawed?.Invoke(gap); // not just the sleep Windows told of
     }
 
     private void WatchClock()
