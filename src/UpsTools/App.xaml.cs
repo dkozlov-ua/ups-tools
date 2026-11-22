@@ -22,7 +22,6 @@ public partial class App : Application
     private MainWindow? _window;
     private PowerWatcher? _power;
     private bool _exiting;
-    private bool _trayHintShown;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -151,12 +150,7 @@ public partial class App : Application
         }
 
         _window?.Hide();
-        if (!_trayHintShown)
-        {
-            _trayHintShown = true;
-            _notifier?.Show("tray-hint", TrayState.Neutral, "UPS Tools is still running",
-                "It keeps watching your UPS from the notification area. Right-click the icon to exit.");
-        }
+        _controller?.OnClosedToTray();
     }
 
     private void OnSuspending()

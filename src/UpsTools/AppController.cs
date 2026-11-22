@@ -541,6 +541,19 @@ public sealed class AppController : ObservableObject
                 attribution: unit.Title, important: true);
     }
 
+    /// <summary>
+    /// The window was closed and the app keeps running in the tray: the first time ever, a notification says so. Not
+    /// again after that, not even after an update or a restart (<see cref="AppSettings.TrayHintShown"/>).
+    /// </summary>
+    public void OnClosedToTray()
+    {
+        if (Settings.TrayHintShown) return;
+        Settings.TrayHintShown = true;
+        Save();
+        _notifier?.Show("tray-hint", TrayState.Neutral, "UPS Tools is still running",
+            "It keeps watching your UPS from the notification area. Right-click the icon to exit.");
+    }
+
     public void SendTestNotification()
     {
         _notifier?.Show("test", TrayState.GridOnline, "Test notification",

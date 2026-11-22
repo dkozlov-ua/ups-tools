@@ -812,6 +812,26 @@ public sealed class AppControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Closing_to_the_tray_says_so_the_first_time_ever_only()
+    {
+        var controller = await Start(monitor: false);
+        await UiThread.Run(controller.OnClosedToTray);
+        await UiThread.Run(controller.OnClosedToTray);
+        var hint = Assert.Single(_notes.All);
+        Assert.Equal(("tray-hint", "UPS Tools is still running"), (hint.Tag, hint.Title));
+
+        // Not after a restart either, e.g. by an update.
+        Assert.True(new SettingsStore(_log, _folder.Path).Load().TrayHintShown);
+        await UiThread.Run(() =>
+        {
+            var again = new AppController(UiThread.Dispatcher, _log, [_ups, .. _others], _scripts.RunAsync, _power, _countdown.ShowAsync);
+            again.AttachTray(new FakeTray(), _notes);
+            again.OnClosedToTray();
+        });
+        Assert.Single(_notes.All);
+    }
+
+    [Fact]
     public async Task Log_entries_show_up_in_recent_activity_newest_first()
     {
         _log.Info("before");

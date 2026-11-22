@@ -194,6 +194,21 @@ public sealed class SettingsAndLogTests : IDisposable
     }
 
     [Fact]
+    public void The_tray_hint_is_shown_once_ever_and_settings_from_before_it_count_as_shown()
+    {
+        Assert.False(_store.Load().TrayHintShown); // no settings yet: a new user
+
+        _store.Save(new AppSettings());
+        Assert.False(_store.Load().TrayHintShown);
+        _store.Save(new AppSettings { TrayHintShown = true });
+        Assert.True(_store.Load().TrayHintShown);
+
+        // Settings of 0.9.0 and earlier: their user has closed the window to the tray before, and seen it.
+        File.WriteAllText(_store.FilePath, """{ "Upses": [], "CloseToTray": true }""");
+        Assert.True(_store.Load().TrayHintShown);
+    }
+
+    [Fact]
     public void A_ups_saved_before_the_tray_settings_is_shown_in_the_tray_on_every_event()
     {
         Directory.CreateDirectory(_store.Folder);
@@ -261,8 +276,9 @@ public sealed class SettingsAndLogTests : IDisposable
         // Saved in the new form at once, with the old file kept.
         Assert.Equal(old, File.ReadAllText(Path.Combine(_store.Folder, SettingsStore.SingleUpsBackupName)));
         using var doc = JsonDocument.Parse(File.ReadAllText(_store.FilePath));
-        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds", "Sharing"], doc.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds", "Sharing", "TrayHintShown"], doc.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Equal(ups.Id, _store.Load().Upses.Single().Id);
+        Assert.True(_store.Load().TrayHintShown); // its user has seen it
         Assert.Empty(_log.Recent);
     }
 
@@ -412,7 +428,7 @@ public sealed class SettingsAndLogTests : IDisposable
     {
         _store.Save(With(_ => { }));
         using var doc = JsonDocument.Parse(File.ReadAllText(_store.FilePath));
-        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds", "Sharing"], doc.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds", "Sharing", "TrayHintShown"], doc.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Contains("\n  \"CloseToTray\"", File.ReadAllText(_store.FilePath));
         Assert.Equal(["Id", "Device", "BatteryLowPercent", "BatteryLowMinutes", "GridLostDelaySeconds", "UnreachableOnBatteryMinutes", "Scripts", "Notifications",
             "ShowInTray", "TrayEvents"],

@@ -25,6 +25,12 @@ public sealed class AppSettings
 
     /// <summary>Whether other PCs can watch the UPSes this PC is connected to, and how.</summary>
     public SharingSettings Sharing { get; set; } = new();
+
+    /// <summary>
+    /// The notification that the app keeps running in the tray once its window is closed has been shown: it isn't
+    /// again. Settings saved before there was this (0.9.0 and earlier) count as shown, as their user has seen it.
+    /// </summary>
+    public bool TrayHintShown { get; set; }
 }
 
 /// <summary>Sharing this PC's UPSes with other PCs (<see cref="UpsTools.Core.Sharing.SharingServer"/>).</summary>
@@ -161,6 +167,7 @@ public sealed class SettingsStore(AppLog log, string? folder = null)
             var text = File.ReadAllText(FilePath);
             var root = JsonNode.Parse(text) as JsonObject ?? throw new JsonException("not a JSON object");
             var settings = root.Deserialize<AppSettings>(Json) ?? new AppSettings();
+            if (!root.ContainsKey(nameof(AppSettings.TrayHintShown))) settings.TrayHintShown = true;
             if (!root.ContainsKey(nameof(AppSettings.Upses))) MoveSingleUps(root, settings, text);
 
             settings.Upses.RemoveAll(ups => ups.Device is null);
