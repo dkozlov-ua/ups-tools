@@ -99,6 +99,8 @@ public sealed class SettingsAndLogTests : IDisposable
                     GridLostDelaySeconds = 15,
                     UnreachableOnBatteryMinutes = 4,
                     Notifications = { [UpsEventKind.UpsReachable] = false },
+                    ShowInTray = false,
+                    TrayEvents = { [UpsEventKind.GridLost] = false },
                 },
                 new UpsSettings { Device = new PairedUps("ecoflow-ble", "AA:BB:CC:DD:EE:FF", "R651ZEB4XF2E0123", "River 3 Plus", "1234567890") },
             ],
@@ -122,6 +124,10 @@ public sealed class SettingsAndLogTests : IDisposable
         Assert.Equal(new EventRules(35, 0, 15, 4), office.Rules());
         Assert.False(office.NotifyOn(UpsEventKind.UpsReachable));
         Assert.True(office.NotifyOn(UpsEventKind.GridLost));
+        Assert.False(office.ShowInTray);
+        Assert.Equal((false, true), (office.TrayOn(UpsEventKind.GridLost), office.TrayOn(UpsEventKind.UpsUnreachable)));
+        Assert.True(river.ShowInTray);
+        Assert.True(river.TrayOn(UpsEventKind.GridLost));
         var script = Assert.Single(office.ScriptsFor(UpsEventKind.GridLost));
         Assert.Equal(settings.Upses[0].Scripts[UpsEventKind.GridLost][0].Id, script.Id);
         Assert.Equal((@"C:\scripts\pause.ahk", "--now", false, true, true),
@@ -185,6 +191,23 @@ public sealed class SettingsAndLogTests : IDisposable
         _store.Save(With(ups => (ups.GridLostDelaySeconds, ups.UnreachableOnBatteryMinutes) = (saved, saved)));
         var ups = _store.Load().Upses[0];
         Assert.Equal((loaded, loaded), (ups.GridLostDelaySeconds, ups.UnreachableOnBatteryMinutes));
+    }
+
+    [Fact]
+    public void A_ups_saved_before_the_tray_settings_is_shown_in_the_tray_on_every_event()
+    {
+        Directory.CreateDirectory(_store.Folder);
+        File.WriteAllText(_store.FilePath, """
+            { "Upses": [
+                { "Device": { "DriverId": "bluetti-ble", "Address": "A", "Name": "A", "Model": "EL100V2" } },
+                { "Device": { "DriverId": "bluetti-ble", "Address": "B", "Name": "B", "Model": "EL100V2" }, "TrayEvents": null, "Notifications": null }
+            ] }
+            """);
+        foreach (var ups in _store.Load().Upses)
+        {
+            Assert.True(ups.ShowInTray);
+            Assert.All(Enum.GetValues<UpsEventKind>(), kind => Assert.True(ups.TrayOn(kind) && ups.NotifyOn(kind)));
+        }
     }
 
     [Fact]
@@ -391,7 +414,8 @@ public sealed class SettingsAndLogTests : IDisposable
         using var doc = JsonDocument.Parse(File.ReadAllText(_store.FilePath));
         Assert.Equal(["Upses", "CloseToTray", "UpdatePeriodSeconds", "Sharing"], doc.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Contains("\n  \"CloseToTray\"", File.ReadAllText(_store.FilePath));
-        Assert.Equal(["Id", "Device", "BatteryLowPercent", "BatteryLowMinutes", "GridLostDelaySeconds", "UnreachableOnBatteryMinutes", "Scripts", "Notifications"],
+        Assert.Equal(["Id", "Device", "BatteryLowPercent", "BatteryLowMinutes", "GridLostDelaySeconds", "UnreachableOnBatteryMinutes", "Scripts", "Notifications",
+            "ShowInTray", "TrayEvents"],
             doc.RootElement.GetProperty("Upses")[0].EnumerateObject().Select(p => p.Name));
     }
 }

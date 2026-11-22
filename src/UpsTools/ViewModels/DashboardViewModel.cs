@@ -74,6 +74,36 @@ public sealed class DashboardViewModel : ObservableObject
     /// <summary>The tray's colour for this UPS (<see cref="Summary"/> says why).</summary>
     public TrayState State { get; private set => Set(ref field, value); } = TrayState.Neutral;
 
+    /// <summary>
+    /// "Battery low" fired in this outage (<see cref="SetBatteryLow"/>): until the grid is back, the tray turns red.
+    /// </summary>
+    public bool IsBatteryLow { get; private set => Set(ref field, value); }
+
+    /// <summary>"Battery low" fired (true), or the outage is over (false).</summary>
+    public void SetBatteryLow(bool low)
+    {
+        IsBatteryLow = low;
+        UpdateSummary();
+    }
+
+    /// <summary>
+    /// The tray's colour for this UPS when some of its states mustn't change it: on battery without
+    /// <paramref name="onBattery"/> it counts as on the grid; with its battery low without <paramref name="batteryLow"/>,
+    /// as on battery; unreachable without <paramref name="unreachable"/>, as its last reading says (grey without one).
+    /// </summary>
+    public TrayState TrayStateWith(bool onBattery, bool batteryLow, bool unreachable)
+    {
+        if (Link == LinkStatus.Unreachable && unreachable) return TrayState.Problem;
+        if (Link is LinkStatus.NotPaired or LinkStatus.Connecting) return State;
+        return _grid switch
+        {
+            false when IsBatteryLow && batteryLow => TrayState.Problem,
+            false => onBattery ? TrayState.OnBattery : TrayState.GridOnline,
+            true => TrayState.GridOnline,
+            null => TrayState.Neutral,
+        };
+    }
+
     /// <summary>One line about this UPS for the tray, e.g. "Grid online · 80 % · 120 W load".</summary>
     public string Summary { get; private set => Set(ref field, value); } = "No UPS paired";
 
@@ -138,6 +168,7 @@ public sealed class DashboardViewModel : ObservableObject
             LinkStatus.Connecting => (TrayState.Neutral, "Connecting to the UPS…"),
             _ => _grid switch
             {
+                false when IsBatteryLow => (TrayState.Problem, $"Battery low · {BatteryValue} · {RuntimeValue} left"),
                 false => (TrayState.OnBattery, $"On battery · {BatteryValue} · {RuntimeValue} left"),
                 true => (TrayState.GridOnline, $"Grid online · {BatteryValue} · {OutputValue} load"),
                 null => (TrayState.Neutral, LinkText),
@@ -149,6 +180,7 @@ public sealed class DashboardViewModel : ObservableObject
     {
         LastUpdated = $"Updated {s.Timestamp.LocalDateTime:HH:mm:ss}";
         _grid = s.GridPresent;
+        if (s.GridPresent == true) IsBatteryLow = false; // the outage is over, "Grid restored" or not
 
         (GridTone, GridValue, GridDetail) = s.GridPresent switch
         {
@@ -205,6 +237,7 @@ public sealed class DashboardViewModel : ObservableObject
         LastUpdated = "";
         _grid = null;
         _serial = null;
+        IsBatteryLow = false;
         (GridTone, GridValue, GridDetail) = (Tone.Neutral, "—", "");
         (BatteryTone, BatteryPercent, BatteryValue, BatteryDetail) = (Tone.Neutral, 0, "—", "");
         (FlowTone, FlowValue, FlowDetail) = (Tone.Neutral, "—", "");

@@ -127,7 +127,7 @@ public sealed class AppController : ObservableObject
     private UpsUnit CreateUnit(UpsSettings settings)
     {
         UpsUnit unit = null!;
-        unit = new UpsUnit(settings, Elevated, Save, () => ApplyRules(unit), RefreshTitles);
+        unit = new UpsUnit(settings, Elevated, Save, () => ApplyRules(unit), RefreshTitles, UpdateTray);
         return unit;
     }
 
@@ -381,6 +381,7 @@ public sealed class AppController : ObservableObject
         var monitor = unit.Monitor;
         unit.Monitor = null;
         unit.GridLostAt = null;
+        unit.Dashboard.SetBatteryLow(false);
         if (monitor is null) return;
         _coordinator?.Leave(unit.Device);
         Hub.Unshare(unit.Device);
@@ -629,6 +630,13 @@ public sealed class AppController : ObservableObject
             unit.GridLostAt = null;
         }
 
+        // Its battery stays low until the grid is back: the tray is red till then.
+        if (kind is UpsEventKind.BatteryLow or UpsEventKind.GridRestored)
+        {
+            unit.Dashboard.SetBatteryLow(kind == UpsEventKind.BatteryLow);
+            UpdateTray();
+        }
+
         // The grid came back (or the UPS answers again): what was queued for the earlier state mustn't run now.
         var stopped = new List<(UpsEventKind, IReadOnlyList<string>)>();
         foreach (var other in kind.Stops())
@@ -654,25 +662,28 @@ public sealed class AppController : ObservableObject
         _ => 0,
     };
 
+    /// <summary>The tray's colour for <paramref name="unit"/>: its state, unless its settings keep that off the icon.</summary>
+    private static TrayState TrayStateOf(UpsUnit unit) => unit.Dashboard.TrayStateWith(
+        onBattery: unit.Settings.TrayOn(UpsEventKind.GridLost), batteryLow: unit.Settings.TrayOn(UpsEventKind.BatteryLow),
+        unreachable: unit.Settings.TrayOn(UpsEventKind.UpsUnreachable));
+
     /// <summary>
-    /// The tray icon takes the colour of the UPS that needs attention most; with several, its tooltip has a line
-    /// for each.
+    /// The tray icon takes the colour of the UPS that needs attention most (<see cref="TrayStateOf"/>); its tooltip has
+    /// a line for each UPS shown in it, with its name when several are paired, or none when none is shown.
     /// </summary>
     private void UpdateTray()
     {
         if (_tray is null) return;
-        switch (Upses.Count)
+        if (Upses.Count == 0)
         {
-            case 0:
-                _tray.Update(TrayState.Neutral, "No UPS paired");
-                return;
-            case 1:
-                _tray.Update(Upses[0].Dashboard.State, Upses[0].Dashboard.Summary);
-                return;
-            default:
-                _tray.Update(Upses.Select(u => u.Dashboard.State).MaxBy(Severity),
-                    string.Join("\n", Upses.Select(u => $"{u.Title}: {u.Dashboard.Summary}")));
-                return;
+            _tray.Update(TrayState.Neutral, "No UPS paired");
+            return;
         }
+
+        var state = Upses.Select(TrayStateOf).MaxBy(Severity);
+        var shown = Upses.Where(u => u.Settings.ShowInTray).ToList();
+        _tray.Update(state, HasSeveral
+            ? string.Join("\n", shown.Select(u => $"{u.Title}: {u.Dashboard.Summary}"))
+            : shown.FirstOrDefault()?.Dashboard.Summary ?? "");
     }
 }

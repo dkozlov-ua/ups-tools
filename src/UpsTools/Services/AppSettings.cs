@@ -72,6 +72,24 @@ public sealed class UpsSettings
 
     public bool NotifyOn(UpsEventKind kind) => !Notifications.TryGetValue(kind, out var on) || on;
 
+    /// <summary>Whether the tray icon's tooltip has a line about it.</summary>
+    public bool ShowInTray { get; set; } = true;
+
+    /// <summary>
+    /// Which events change the tray icon's colour while their state lasts (<see cref="TrayEventKinds"/>). Events not
+    /// listed do.
+    /// </summary>
+    public Dictionary<UpsEventKind, bool> TrayEvents { get; set; } = [];
+
+    /// <summary>
+    /// The events that change the tray icon's colour while their state lasts: on battery it turns yellow; with the
+    /// battery low (until the grid is back) and unreachable, red.
+    /// </summary>
+    public static IReadOnlyList<UpsEventKind> TrayEventKinds { get; } =
+        [UpsEventKind.GridLost, UpsEventKind.BatteryLow, UpsEventKind.UpsUnreachable];
+
+    public bool TrayOn(UpsEventKind kind) => !TrayEvents.TryGetValue(kind, out var on) || on;
+
     public List<ScriptAction> ScriptsFor(UpsEventKind kind)
     {
         if (!Scripts.TryGetValue(kind, out var list)) Scripts[kind] = list = [];
@@ -155,6 +173,8 @@ public sealed class SettingsStore(AppLog log, string? folder = null)
             {
                 if (string.IsNullOrWhiteSpace(ups.Id) || settings.Upses.Count(u => u.Id == ups.Id) > 1) ups.Id = Guid.NewGuid().ToString("N");
                 if (string.IsNullOrWhiteSpace(ups.Label)) ups.Label = null;
+                ups.Notifications ??= [];
+                ups.TrayEvents ??= [];
                 ups.BatteryLowPercent = Math.Clamp(ups.BatteryLowPercent, 0, AppSettings.MaxBatteryLowPercent);
                 ups.BatteryLowMinutes = Math.Clamp(ups.BatteryLowMinutes, 0, AppSettings.MaxBatteryLowMinutes);
                 ups.GridLostDelaySeconds = Math.Clamp(ups.GridLostDelaySeconds, 0, AppSettings.MaxGridLostDelaySeconds);

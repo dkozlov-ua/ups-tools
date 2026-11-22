@@ -13,8 +13,18 @@ public sealed class MultipleUpsUiTests : IDisposable
 
     private static JsonArray Scripts(string path) => new(new JsonObject { ["Path"] = path });
 
+    /// <summary>Picks the UPS the tabs show, by name, in the picker next to them.</summary>
+    private void PickUps(string name)
+    {
+        var picker = Ui.WaitFor(() => _app.MainWindow().Find(new PropertyCondition(AutomationElement.AutomationIdProperty, "UpsPicker")), "the UPS picker");
+        ((ExpandCollapsePattern)picker.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+        Ui.WaitFor(() => picker.Find(new AndCondition(
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem),
+            new PropertyCondition(AutomationElement.NameProperty, name))), $"{name} in the picker").Select();
+    }
+
     [Fact]
-    public void Both_are_on_the_dashboard_and_each_runs_its_own_scripts()
+    public void Both_are_on_the_dashboard_in_full_and_each_runs_its_own_scripts()
     {
         var desk = _app.Script("desk.ps1");
         var office = _app.Script("office.ps1");
@@ -26,17 +36,14 @@ public sealed class MultipleUpsUiTests : IDisposable
         });
         var window = _app.Start()!;
 
-        // Each at a glance; the first one in full.
-        var tiles = window.ById("UpsTiles");
-        Ui.Until(() => tiles.AllById("UpsSummary").Select(t => t.Text()).SequenceEqual(
-            ["Grid online · 80 % · 120 W load", "Grid online · 40 % · 60 W load"]), "both UPSes online");
-        window.HasText("DeviceTitle", "Bluetti Simulator");
-        window.HasText("BatteryValue", "80 %");
-
-        tiles.ByName("Office").Select();
-        window.HasText("DeviceTitle", "Office");
-        window.HasText("DeviceSubtitle", "Bluetti Simulator · Serial SIM0002 · 00:00:00:00:00:02");
-        window.HasText("BatteryValue", "40 %");
+        // Both in full, at once.
+        var panels = window.ById("UpsPanels");
+        Ui.Until(() => panels.AllById("BatteryValue").Select(t => t.Text()).SequenceEqual(["80 %", "40 %"]), "both UPSes' readings");
+        Assert.Equal(["Bluetti Simulator", "Office"], panels.AllById("DeviceTitle").Select(t => t.Text()));
+        Assert.Equal("Bluetti Simulator · Serial SIM0002 · 00:00:00:00:00:02", panels.AllById("DeviceSubtitle")[1].Text());
+        Assert.Equal(["Connected", "Connected"], panels.AllById("LinkText").Select(t => t.Text()));
+        Assert.Equal(["120 W", "60 W"], panels.AllById("OutputValue").Select(t => t.Text()));
+        PickUps("Office");
 
         // The tabs follow the UPS picked.
         var scripts = _app.Tab("Scripts");
@@ -66,9 +73,11 @@ public sealed class MultipleUpsUiTests : IDisposable
         Ui.Until(() => _app.UpsCount() == 1, "the UPS to be forgotten");
         configuration.HasText("UpsSettingsTitle", "Office");
 
+        // One left: in full, on its own.
         var dashboard = _app.Tab("Dashboard");
         dashboard.HasText("DeviceTitle", "Office");
         dashboard.HasText("BatteryValue", "40 %");
+        Ui.Until(() => dashboard.AllById("DeviceTitle").Count == 1, "the list of UPSes to go");
     }
 
     [Fact]
@@ -115,13 +124,18 @@ public sealed class MultipleUpsUiTests : IDisposable
         window.ByName("UPS reachable again").SetChecked(false);
         Ui.Until(() => (bool?)_app.Ups(1)["Notifications"]?["UpsReachable"] == false, "the second one's switch to be saved");
 
+        // So are its tray switches.
+        window.ByName("Show in the tooltip").SetChecked(false);
+        Ui.Until(() => (bool?)_app.Ups(1)["ShowInTray"] == false, "the tooltip switch to be saved");
+        window.ByName("Tray icon on UPS unreachable").SetChecked(false);
+        Ui.Until(() => (bool?)_app.Ups(1)["TrayEvents"]?["UpsUnreachable"] == false, "the tray switch to be saved");
+        Assert.True(window.ByName("Tray icon on Grid lost").IsChecked());
+        Assert.True((bool?)_app.Ups(0)["ShowInTray"] != false);
+
         // The picker switches the settings shown.
-        var picker = Ui.WaitFor(() => _app.MainWindow().Find(new PropertyCondition(AutomationElement.AutomationIdProperty, "UpsPicker")), "the UPS picker");
-        ((ExpandCollapsePattern)picker.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
-        Ui.WaitFor(() => picker.Find(new AndCondition(
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem),
-            new PropertyCondition(AutomationElement.NameProperty, "Bluetti Simulator"))), "the first UPS in the picker").Select();
+        PickUps("Bluetti Simulator");
         window.HasText("UpsSettingsTitle", "Bluetti Simulator");
         Assert.False(window.ByName("Grid lost").IsChecked());
+        Assert.True(window.ByName("Show in the tooltip").IsChecked());
     }
 }

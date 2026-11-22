@@ -70,21 +70,27 @@ public sealed class ConfigurationViewModel : ObservableObject
     public NumberSetting UpdatePeriod { get; }
 }
 
-/// <summary>One UPS's own settings: its name, when its events fire and which of them show a notification.</summary>
+/// <summary>
+/// One UPS's own settings: its name, when its events fire, which of them show a notification, and how the tray icon
+/// shows it.
+/// </summary>
 public sealed class UpsConfigurationViewModel : ObservableObject
 {
     private readonly UpsSettings _ups;
     private readonly Action _changed;
     private readonly Action _renamed;
+    private readonly Action _trayChanged;
 
     /// <param name="changed">Saves the settings.</param>
     /// <param name="rulesChanged">Applies changed event limits to the UPS's monitor.</param>
     /// <param name="renamed">The UPS's name changed.</param>
-    public UpsConfigurationViewModel(UpsSettings ups, Action changed, Action rulesChanged, Action renamed)
+    /// <param name="trayChanged">How the tray icon shows the UPS changed.</param>
+    public UpsConfigurationViewModel(UpsSettings ups, Action changed, Action rulesChanged, Action renamed, Action? trayChanged = null)
     {
         _ups = ups;
         _changed = changed;
         _renamed = renamed;
+        _trayChanged = trayChanged ?? (() => { });
 
         NumberSetting Rule(int max, Func<int> get, Action<int> set) => new(0, max, get, value =>
         {
@@ -98,10 +104,33 @@ public sealed class UpsConfigurationViewModel : ObservableObject
         GridLostDelay = Rule(AppSettings.MaxGridLostDelaySeconds, () => ups.GridLostDelaySeconds, v => ups.GridLostDelaySeconds = v);
         UnreachableOnBattery = Rule(AppSettings.MaxUnreachableOnBatteryMinutes,
             () => ups.UnreachableOnBatteryMinutes, v => ups.UnreachableOnBatteryMinutes = v);
-        Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new NotificationOption(kind, ups, changed))];
+        Notifications = [.. Enum.GetValues<UpsEventKind>().Select(kind => new EventOption(kind, ups.Notifications, changed))];
+        TrayEvents = [.. UpsSettings.TrayEventKinds.Select(kind => new EventOption(kind, ups.TrayEvents, () =>
+        {
+            changed();
+            _trayChanged();
+        }))];
     }
 
-    public IReadOnlyList<NotificationOption> Notifications { get; }
+    /// <summary>Which events show a Windows notification.</summary>
+    public IReadOnlyList<EventOption> Notifications { get; }
+
+    /// <summary>Which events change the tray icon's colour while their state lasts.</summary>
+    public IReadOnlyList<EventOption> TrayEvents { get; }
+
+    /// <summary>Whether the tray icon's tooltip has a line about it.</summary>
+    public bool ShowInTray
+    {
+        get => _ups.ShowInTray;
+        set
+        {
+            if (_ups.ShowInTray == value) return;
+            _ups.ShowInTray = value;
+            OnPropertyChanged();
+            _changed();
+            _trayChanged();
+        }
+    }
 
     /// <summary>Its brand and model, which it is called unless it is given a <see cref="Label"/>.</summary>
     public string DefaultTitle => _ups.Device.Title;
@@ -193,19 +222,22 @@ public sealed class NumberSetting : ObservableObject
     public void Normalize() => Text = _get().ToString();
 }
 
-/// <summary>Whether one event of a UPS shows a Windows notification.</summary>
-public sealed class NotificationOption(UpsEventKind kind, UpsSettings settings, Action changed) : ObservableObject
+/// <summary>
+/// Whether one event of a UPS does something, e.g. shows a Windows notification: as <paramref name="choices"/> says,
+/// where an event not listed does.
+/// </summary>
+public sealed class EventOption(UpsEventKind kind, Dictionary<UpsEventKind, bool> choices, Action changed) : ObservableObject
 {
     public UpsEventKind Kind { get; } = kind;
     public string Title { get; } = kind.Title();
 
     public bool IsEnabled
     {
-        get => settings.NotifyOn(Kind);
+        get => !choices.TryGetValue(Kind, out var on) || on;
         set
         {
-            if (settings.NotifyOn(Kind) == value) return;
-            settings.Notifications[Kind] = value;
+            if (IsEnabled == value) return;
+            choices[Kind] = value;
             OnPropertyChanged();
             changed();
         }

@@ -1,140 +1,203 @@
 <UserControl x:Class="UpsTools.Views.DashboardView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:svc="clr-namespace:UpsTools.Services">
+             xmlns:svc="clr-namespace:UpsTools.Services"
+             xmlns:vm="clr-namespace:UpsTools.ViewModels"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+    <UserControl.Resources>
+        <vm:ScaleConverter x:Key="Scale" />
+        <vm:IndicatorColumnsConverter x:Key="IndicatorColumns" />
+
+        <!--
+            One UPS's readings: what it is, how it is connected, and its indicators. The look (PanelTitle,
+            Indicator…) comes from where it is shown: in full with one UPS, compact with several.
+        -->
+        <DataTemplate x:Key="UpsPanel" DataType="{x:Type vm:DashboardViewModel}">
+            <StackPanel>
+                <!-- Device header -->
+                <DockPanel Margin="{DynamicResource PanelHeaderMargin}">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding LastUpdated}" AutomationProperties.AutomationId="LastUpdated" Style="{StaticResource Caption}" Margin="0,0,12,0" />
+                        <Border Style="{StaticResource LinkPill}" Tag="{Binding Link}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Style="{StaticResource LinkDot}" Tag="{Binding Link}" />
+                                <TextBlock Text="{Binding LinkText}" AutomationProperties.AutomationId="LinkText" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="{Binding DeviceTitle}" AutomationProperties.AutomationId="DeviceTitle" Style="{DynamicResource PanelTitle}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding DeviceSubtitle}" AutomationProperties.AutomationId="DeviceSubtitle" Style="{StaticResource Caption}" Margin="0,2,0,0"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- Indicators -->
+                <UniformGrid Style="{DynamicResource IndicatorGrid}">
+                    <Border Style="{DynamicResource IndicatorCard}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Glyph}" Tag="{Binding GridTone}" Text="&#xE945;" />
+                                <TextBlock Style="{StaticResource Caption}" Text="{DynamicResource GridCaption}" />
+                            </StackPanel>
+                            <TextBlock Style="{DynamicResource IndicatorValue}" Tag="{Binding GridTone}" Text="{Binding GridValue}" AutomationProperties.AutomationId="GridValue" />
+                            <TextBlock Style="{DynamicResource IndicatorDetail}" Text="{Binding GridDetail}" AutomationProperties.AutomationId="GridDetail" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource IndicatorCard}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Glyph}" Tag="{Binding BatteryTone}" Text="&#xE83F;" />
+                                <TextBlock Style="{StaticResource Caption}" Text="{DynamicResource BatteryCaption}" />
+                            </StackPanel>
+                            <TextBlock Style="{DynamicResource IndicatorValue}" Text="{Binding BatteryValue}" AutomationProperties.AutomationId="BatteryValue" />
+                            <ProgressBar Style="{StaticResource ToneBar}" Tag="{Binding BatteryTone}" Value="{Binding BatteryPercent, Mode=OneWay}" />
+                            <TextBlock Style="{DynamicResource IndicatorDetail}" Text="{Binding BatteryDetail}" AutomationProperties.AutomationId="BatteryDetail" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource IndicatorCard}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Glyph}" Tag="{Binding FlowTone}" Text="&#xE8AB;" />
+                                <TextBlock Style="{StaticResource Caption}" Text="{DynamicResource FlowCaption}" />
+                            </StackPanel>
+                            <TextBlock Style="{DynamicResource IndicatorValue}" Tag="{Binding FlowTone}" Text="{Binding FlowValue}" AutomationProperties.AutomationId="FlowValue" />
+                            <TextBlock Style="{DynamicResource IndicatorDetail}" Text="{Binding FlowDetail}" AutomationProperties.AutomationId="FlowDetail" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource IndicatorCard}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE916;" />
+                                <TextBlock Style="{StaticResource Caption}" Text="{DynamicResource RuntimeCaption}" />
+                            </StackPanel>
+                            <TextBlock Style="{DynamicResource IndicatorValue}" Text="{Binding RuntimeValue}" AutomationProperties.AutomationId="RuntimeValue" />
+                            <TextBlock Style="{DynamicResource IndicatorDetail}" Text="{Binding RuntimeDetail}" AutomationProperties.AutomationId="RuntimeDetail" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource IndicatorCard}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;" />
+                                <TextBlock Style="{StaticResource Caption}" Text="{DynamicResource InputCaption}" />
+                            </StackPanel>
+                            <TextBlock Style="{DynamicResource IndicatorValue}" Text="{Binding InputValue}" AutomationProperties.AutomationId="InputValue" />
+                            <TextBlock Style="{DynamicResource IndicatorDetail}" Text="{Binding InputDetail}" AutomationProperties.AutomationId="InputDetail" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource IndicatorCard}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE898;" />
+                                <TextBlock Style="{StaticResource Caption}" Text="{DynamicResource OutputCaption}" />
+                            </StackPanel>
+                            <TextBlock Style="{DynamicResource IndicatorValue}" Text="{Binding OutputValue}" AutomationProperties.AutomationId="OutputValue" />
+                            <TextBlock Style="{DynamicResource IndicatorDetail}" Text="{Binding OutputDetail}" AutomationProperties.AutomationId="OutputDetail" />
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
     <Grid Margin="10,14,10,12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- With several UPSes: each at a glance; the one clicked is shown below. -->
-        <ListBox ItemsSource="{Binding Upses}" SelectedItem="{Binding Selected}" Margin="2,0,2,8"
-                 Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 Visibility="{Binding HasSeveral, Converter={StaticResource BoolToVisibility}}"
-                 AutomationProperties.Name="UPSes" AutomationProperties.AutomationId="UpsTiles">
-            <ListBox.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <WrapPanel />
-                </ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Width="250" Margin="2,4">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse Style="{StaticResource StateDot}" Tag="{Binding Dashboard.State}" />
-                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                        </StackPanel>
-                        <TextBlock Text="{Binding Dashboard.Summary}" Style="{StaticResource Detail}" Margin="16,2,0,0"
-                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="UpsSummary" />
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
-
-        <!-- Device header -->
-        <DockPanel Grid.Row="1" Margin="6,0,6,6" DataContext="{Binding Dashboard}">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="{Binding LastUpdated}" AutomationProperties.AutomationId="LastUpdated" Style="{StaticResource Caption}" Margin="0,0,12,0" />
-                <Border Style="{StaticResource LinkPill}" Tag="{Binding Link}">
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Style="{StaticResource LinkDot}" Tag="{Binding Link}" />
-                        <TextBlock Text="{Binding LinkText}" AutomationProperties.AutomationId="LinkText" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-            <StackPanel>
-                <TextBlock Text="{Binding DeviceTitle}" AutomationProperties.AutomationId="DeviceTitle" Style="{StaticResource PageTitle}" />
-                <TextBlock Text="{Binding DeviceSubtitle}" AutomationProperties.AutomationId="DeviceSubtitle" Style="{StaticResource Caption}" Margin="0,2,0,0" />
-            </StackPanel>
-        </DockPanel>
-
-        <!-- Indicators -->
-        <UniformGrid Grid.Row="2" Columns="3" DataContext="{Binding Dashboard}">
-            <UniformGrid.Style>
-                <Style TargetType="UniformGrid">
+        <!--
+            One UPS (or none): in full. How its panel looks is up to the styles here, and to the list's styles below
+            with several (compact): neither may be above the other, or the template would find that one.
+        -->
+        <ContentControl Content="{Binding Dashboard}" ContentTemplate="{StaticResource UpsPanel}" Focusable="False"
+                        Visibility="{Binding HasSeveral, Converter={StaticResource InverseBoolToVisibility}}">
+            <ContentControl.Resources>
+                <sys:String x:Key="GridCaption">Grid</sys:String>
+                <sys:String x:Key="BatteryCaption">Battery</sys:String>
+                <sys:String x:Key="FlowCaption">Charge / discharge rate</sys:String>
+                <sys:String x:Key="RuntimeCaption">Time on battery</sys:String>
+                <sys:String x:Key="InputCaption">Input power</sys:String>
+                <sys:String x:Key="OutputCaption">Output power (load)</sys:String>
+                <Thickness x:Key="PanelHeaderMargin">6,0,6,6</Thickness>
+                <Style x:Key="PanelTitle" TargetType="TextBlock" BasedOn="{StaticResource PageTitle}" />
+                <Style x:Key="IndicatorCard" TargetType="Border" BasedOn="{StaticResource Card}" />
+                <Style x:Key="IndicatorValue" TargetType="TextBlock" BasedOn="{StaticResource Value}" />
+                <Style x:Key="IndicatorDetail" TargetType="TextBlock" BasedOn="{StaticResource Detail}" />
+                <Style x:Key="IndicatorGrid" TargetType="UniformGrid">
+                    <Setter Property="Columns" Value="3" />
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding IsStale}" Value="True">
                             <Setter Property="Opacity" Value="0.55" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </UniformGrid.Style>
+            </ContentControl.Resources>
+        </ContentControl>
 
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Tag="{Binding GridTone}" Text="&#xE945;" />
-                        <TextBlock Style="{StaticResource Caption}" Text="Grid" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Tag="{Binding GridTone}" Text="{Binding GridValue}" AutomationProperties.AutomationId="GridValue" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding GridDetail}" AutomationProperties.AutomationId="GridDetail" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Tag="{Binding BatteryTone}" Text="&#xE83F;" />
-                        <TextBlock Style="{StaticResource Caption}" Text="Battery" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding BatteryValue}" AutomationProperties.AutomationId="BatteryValue" />
-                    <ProgressBar Style="{StaticResource ToneBar}" Tag="{Binding BatteryTone}" Value="{Binding BatteryPercent, Mode=OneWay}" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding BatteryDetail}" AutomationProperties.AutomationId="BatteryDetail" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Tag="{Binding FlowTone}" Text="&#xE8AB;" />
-                        <TextBlock Style="{StaticResource Caption}" Text="Charge / discharge rate" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Tag="{Binding FlowTone}" Text="{Binding FlowValue}" AutomationProperties.AutomationId="FlowValue" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding FlowDetail}" AutomationProperties.AutomationId="FlowDetail" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE916;" />
-                        <TextBlock Style="{StaticResource Caption}" Text="Time on battery" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding RuntimeValue}" AutomationProperties.AutomationId="RuntimeValue" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding RuntimeDetail}" AutomationProperties.AutomationId="RuntimeDetail" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;" />
-                        <TextBlock Style="{StaticResource Caption}" Text="Input power" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding InputValue}" AutomationProperties.AutomationId="InputValue" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding InputDetail}" AutomationProperties.AutomationId="InputDetail" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE898;" />
-                        <TextBlock Style="{StaticResource Caption}" Text="Output power (load)" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource Value}" Text="{Binding OutputValue}" AutomationProperties.AutomationId="OutputValue" />
-                    <TextBlock Style="{StaticResource Detail}" Text="{Binding OutputDetail}" AutomationProperties.AutomationId="OutputDetail" />
-                </StackPanel>
-            </Border>
-        </UniformGrid>
+        <!-- Several: all of them at once, compact; past most of the page's height, they scroll. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False" Margin="0,0,0,4"
+                      MaxHeight="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Scale}, ConverterParameter=0.68}"
+                      Visibility="{Binding HasSeveral, Converter={StaticResource BoolToVisibility}}">
+            <ItemsControl ItemsSource="{Binding Upses}" Focusable="False"
+                          AutomationProperties.Name="UPSes" AutomationProperties.AutomationId="UpsPanels">
+                <ItemsControl.Resources>
+                    <sys:String x:Key="GridCaption">Grid</sys:String>
+                    <sys:String x:Key="BatteryCaption">Battery</sys:String>
+                    <sys:String x:Key="FlowCaption">Charge rate</sys:String>
+                    <sys:String x:Key="RuntimeCaption">Time left</sys:String>
+                    <sys:String x:Key="InputCaption">Input</sys:String>
+                    <sys:String x:Key="OutputCaption">Load</sys:String>
+                    <Thickness x:Key="PanelHeaderMargin">6,0,6,2</Thickness>
+                    <Style x:Key="PanelTitle" TargetType="TextBlock" BasedOn="{StaticResource PageTitle}">
+                        <Setter Property="FontSize" Value="16" />
+                    </Style>
+                    <Style x:Key="IndicatorCard" TargetType="Border" BasedOn="{StaticResource Card}">
+                        <Setter Property="Padding" Value="12,8" />
+                        <Setter Property="Margin" Value="4" />
+                    </Style>
+                    <Style x:Key="IndicatorValue" TargetType="TextBlock" BasedOn="{StaticResource Value}">
+                        <Setter Property="FontSize" Value="20" />
+                        <Setter Property="Margin" Value="0,2,0,0" />
+                    </Style>
+                    <!-- One line each; the whole of it in a tooltip. -->
+                    <Style x:Key="IndicatorDetail" TargetType="TextBlock" BasedOn="{StaticResource Detail}">
+                        <Setter Property="TextWrapping" Value="NoWrap" />
+                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                        <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                        <Style.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter Property="ToolTip" Value="{x:Null}" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                    <!-- All six in a row, unless the page is too narrow for them. -->
+                    <Style x:Key="IndicatorGrid" TargetType="UniformGrid">
+                        <Setter Property="Columns" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource IndicatorColumns}, ConverterParameter=860}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsStale}" Value="True">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ItemsControl.Resources>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <ContentPresenter Content="{Binding Dashboard}" ContentTemplate="{StaticResource UpsPanel}" Margin="0,0,0,10" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
 
         <!-- Activity -->
-        <Border Grid.Row="3" Style="{StaticResource Card}" Padding="16,14,6,8">
+        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,14,6,8">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Recent activity" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
                 <ScrollViewer VerticalScrollBarVisibility="Auto">

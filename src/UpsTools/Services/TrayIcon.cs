@@ -7,6 +7,7 @@ namespace UpsTools.Services;
 /// <summary>Shows the UPS state outside the window.</summary>
 public interface ITray
 {
+    /// <param name="status">What the tooltip says under the app's name, a line for each UPS shown; empty: nothing.</param>
     void Update(TrayState state, string status);
 
     /// <summary>A balloon, for when Windows notifications aren't available.</summary>
@@ -18,6 +19,7 @@ public sealed class TrayIcon : ITray, IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
     private readonly Forms.ToolStripMenuItem _statusItem;
+    private readonly Forms.ToolStripSeparator _statusSeparator = new();
     private readonly Dictionary<TrayState, Drawing.Icon> _icons = [];
 
     public TrayIcon(Action open, Action exit)
@@ -29,7 +31,7 @@ public sealed class TrayIcon : ITray, IDisposable
         _statusItem = new Forms.ToolStripMenuItem("Starting…") { Enabled = false };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add(_statusItem);
-        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add(_statusSeparator);
         menu.Items.Add("Open UPS Tools", null, (_, _) => open());
         menu.Items.Add("Exit", null, (_, _) => exit());
 
@@ -46,8 +48,9 @@ public sealed class TrayIcon : ITray, IDisposable
         };
     }
 
-    /// <summary>The icon's state, tooltip and the status line of its menu (for the tests).</summary>
-    internal (TrayState State, string Tooltip, string Status) Current => (_state, _icon.Text, _statusItem.Text ?? "");
+    /// <summary>The icon's state, tooltip and the status line of its menu, empty while hidden (for the tests).</summary>
+    internal (TrayState State, string Tooltip, string Status) Current =>
+        (_state, _icon.Text, _statusItem.Available ? _statusItem.Text ?? "" : "");
 
     /// <summary>The icon shown for each state (for the tests).</summary>
     internal IReadOnlyDictionary<TrayState, Drawing.Icon> Icons => _icons;
@@ -62,9 +65,10 @@ public sealed class TrayIcon : ITray, IDisposable
         _state = state;
         _icon.Icon = _icons[state];
         // The app's name on a line of its own, like each UPS's line under it when there are several.
-        var text = $"UPS Tools\n{status}";
+        var text = status.Length == 0 ? "UPS Tools" : $"UPS Tools\n{status}";
         _icon.Text = text.Length > MaxTooltip ? text[..(MaxTooltip - 1)] + "…" : text;
         _statusItem.Text = status;
+        _statusItem.Available = _statusSeparator.Available = status.Length > 0;
     }
 
     public void Notify(string title, string text, bool warning = false) =>

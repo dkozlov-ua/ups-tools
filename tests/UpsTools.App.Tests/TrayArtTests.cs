@@ -121,6 +121,12 @@ public class TrayArtTests
             Assert.Equal(127, tray.Current.Tooltip.Length); // Windows' limit
             Assert.EndsWith("x…", tray.Current.Tooltip);
             Assert.Equal(longStatus, tray.Current.Status);
+
+            // No UPS shown in it: the app's name alone, and no status line in the menu.
+            tray.Update(TrayState.GridOnline, "");
+            Assert.Equal((TrayState.GridOnline, "UPS Tools", ""), tray.Current);
+            tray.Update(TrayState.GridOnline, "Grid online · 80 % · 120 W load");
+            Assert.Equal("Grid online · 80 % · 120 W load", tray.Current.Status);
         });
     }
 }

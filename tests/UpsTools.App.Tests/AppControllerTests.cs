@@ -227,6 +227,30 @@ public sealed class AppControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Battery_low_turns_the_tray_red_until_the_grid_is_back_unless_switched_off()
+    {
+        var controller = await Start();
+        await Online();
+        await GridLost(30);
+        await UiUntil(() => _tray.Current.State == TrayState.OnBattery, "yellow");
+
+        _ups.Answer(false, 20);
+        await UiUntil(() => _tray.Current.State == TrayState.Problem, "red");
+        Assert.StartsWith("Battery low · 20 % · ", _tray.Current.Status);
+
+        // Switched off: yellow, as on battery; on again: red at once.
+        var low = await Ui(() => controller.Upses[0].Configuration.TrayEvents.Single(e => e.Kind == UpsEventKind.BatteryLow));
+        await UiThread.Run(() => low.IsEnabled = false);
+        Assert.Equal(TrayState.OnBattery, _tray.Current.State);
+        await UiThread.Run(() => low.IsEnabled = true);
+        Assert.Equal(TrayState.Problem, _tray.Current.State);
+
+        _ups.Answer(true, 21);
+        await UiUntil(() => _tray.Current == (TrayState.GridOnline, "Grid online · 21 % · 120 W load"), "green again");
+        Assert.False(await Ui(() => controller.Dashboard.IsBatteryLow));
+    }
+
+    [Fact]
     public async Task Battery_low_runs_its_scripts_and_grid_restored_stops_them_and_grid_lost()
     {
         await Start(s =>
@@ -847,6 +871,70 @@ public sealed class AppControllerTests : IDisposable
         // Selecting the other one shows it.
         await UiThread.Run(() => controller.Selected = controller.Upses[1]);
         Assert.Equal(("Office", LinkStatus.Unreachable), await Ui(() => (controller.Dashboard.DeviceTitle, controller.Dashboard.Link)));
+    }
+
+    [Fact]
+    public async Task A_ups_left_out_of_the_tooltip_still_colours_the_icon()
+    {
+        var (second, settings) = Second(seed: s => s.ShowInTray = false);
+        var controller = await Start(others: settings);
+        _ups.Answer(true, 80);
+        second.Answer(FakeUps.Status(false, 50, output: 60));
+        await UiUntil(() => controller.Upses.All(u => u.Dashboard.Link == LinkStatus.Online), "both readings");
+
+        // Named, as several are paired, even with only one line.
+        await UiUntil(() => _tray.Current == (TrayState.OnBattery, "Bluetti EL100V2: Grid online · 80 % · 120 W load"), "the tray");
+
+        // Showing it again, and leaving out the other one: at once, and saved.
+        await UiThread.Run(() =>
+        {
+            controller.Upses[1].Configuration.ShowInTray = true;
+            controller.Upses[0].Configuration.ShowInTray = false;
+        });
+        Assert.Equal(TrayState.OnBattery, _tray.Current.State);
+        Assert.StartsWith("Office: On battery · 50 % · ", _tray.Current.Status);
+        Assert.DoesNotContain("\n", _tray.Current.Status);
+        Assert.Contains("\"ShowInTray\": false", File.ReadAllText(Path.Combine(_folder.Path, "settings.json")));
+
+        // None shown: the tooltip is the app's name alone.
+        await UiThread.Run(() => controller.Upses[1].Configuration.ShowInTray = false);
+        Assert.Equal((TrayState.OnBattery, ""), _tray.Current);
+    }
+
+    [Fact]
+    public async Task The_only_ups_left_out_of_the_tooltip_leaves_it_empty()
+    {
+        await Start(s => s.ShowInTray = false);
+        await Online();
+        Assert.Equal((TrayState.GridOnline, ""), _tray.Current);
+    }
+
+    [Fact]
+    public async Task A_ups_whose_tray_events_are_off_leaves_the_icon_alone()
+    {
+        var (second, settings) = Second(seed: s => s.TrayEvents[UpsEventKind.GridLost] = false);
+        var controller = await Start(s => s.TrayEvents[UpsEventKind.UpsUnreachable] = false, others: settings);
+        _ups.Answer(true, 80);
+        second.Answer(true, 50);
+        await UiUntil(() => controller.Upses.All(u => u.Dashboard.Link == LinkStatus.Online), "both readings");
+
+        // The second one on battery: it doesn't count; the tooltip says so all the same.
+        second.Answer(false, 49);
+        await UiUntil(() => _tray.Current.Status.Contains("Office: On battery"), "the second one on battery");
+        Assert.Equal(TrayState.GridOnline, _tray.Current.State);
+
+        // The first one unreachable: it counts as its last reading, on the grid.
+        _ups.Fail();
+        _ups.Fail();
+        _ups.Fail();
+        await UiUntil(() => _tray.Current.Status.StartsWith("Bluetti EL100V2: UPS unreachable"), "the first one unreachable");
+        Assert.Equal(TrayState.GridOnline, _tray.Current.State);
+
+        // Turned on again: the icon follows at once.
+        await UiThread.Run(() => controller.Upses[1].Configuration.TrayEvents.Single(e => e.Kind == UpsEventKind.GridLost).IsEnabled = true);
+        Assert.Equal(TrayState.OnBattery, _tray.Current.State);
+        await UiThread.Run(() => controller.Upses[0].Configuration.TrayEvents.Single(e => e.Kind == UpsEventKind.UpsUnreachable).IsEnabled = true);
+        Assert.Equal(TrayState.Problem, _tray.Current.State);
     }
 
     [Fact]

@@ -8,13 +8,15 @@ low, and wake the NAS when the grid comes back.
 
 - **Several UPSes**: pair as many as you like; they are monitored at the same time, each with its own scripts, event
   limits and notifications, and optionally a name of its own (e.g. *Desk*, *Server rack*) that notifications, the tray
-  and the log use. With more than one, a picker next to the tabs chooses the UPS the window shows, and the dashboard
-  has a tile for each.
+  and the log use. With more than one, the dashboard shows all of them at once, and a picker next to the tabs chooses
+  the UPS the scripts and the settings are about.
 - **Network sharing**: several PCs can watch the same UPS. With *Share with other PCs* on and the same sharing code,
   the PCs on your network find each other, only one of them connects to each UPS over Bluetooth, and the others read
   it through that one, each with its own scripts and notifications; another PC takes over if that one goes away. UPSes
   another PC is connected to show up in **Add UPS…** (see [Network sharing](#network-sharing)).
 - **Dashboard**: grid status, battery level, charge/discharge rate, estimated time on battery, input and output power, recent activity.
+  With several UPSes, each has a compact panel of its own: six tiles in a row (two rows of three in a narrow window),
+  each detail in a tooltip once it doesn't fit; past about two thirds of the window's height, they scroll.
 - **Scripts**: attach any number of scripts to each event of each UPS. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
   file association; `.ps1` files run hidden through PowerShell. Arguments are optional.
   - They start in the listed order; drag a script by its handle (or Alt+Up / Alt+Down) to reorder.
@@ -38,10 +40,18 @@ low, and wake the NAS when the grid comes back.
   about 6 h 10 m left at 120 W*, naming the scripts it started and the UPS. *Grid restored* says how long the outage
   lasted and replaces the same UPS's *Grid lost* or *Battery low* notification; *UPS reachable again* replaces
   *UPS unreachable*. Clicking one opens the app.
-- **Tray icon**: coloured by the UPS that needs attention most (red: unreachable, yellow: on battery, green: all on
-  the grid); its tooltip has a line for each UPS.
+- **Tray icon**: coloured by the UPS that needs attention most (red: battery low or unreachable, yellow: on battery,
+  green: all on the grid); its tooltip has a line for each UPS. After *Battery low*, the icon stays red, and the
+  UPS's line says *Battery low*, until the grid is back. For each UPS, Configuration → Tray icon says:
+  - **Show in the tooltip**: whether it has a line there. Windows cuts the tooltip at 127 characters, so with several
+    UPSes, leave out the ones you don't need to see there; with none left, the tooltip is just *UPS Tools*.
+  - **Grid lost**, **Battery low**, **UPS unreachable**: whether these events change the colour while they last. With
+    one off, that UPS leaves the icon alone: on battery, it counts as on the grid; with its battery low, as on battery;
+    unreachable, as its last reading says (grey without one). Its tooltip line, notifications and scripts stay as they
+    are.
 - **Configuration**: add and forget UPSes, close to tray, start with Windows, the update period; for each UPS, its
-  name, how long the grid must be gone before *Grid lost*, the *Battery low* limits, which events notify.
+  name, how long the grid must be gone before *Grid lost*, the *Battery low* limits, which events notify, and how the
+  tray icon shows it.
 - **Updates**: Configuration → About → **Check for updates** looks for a newer release here; **Update to X.Y.Z** downloads
   its setup, checks it against the SHA-256 GitHub lists for it and runs it, which updates the app and opens it again.
 

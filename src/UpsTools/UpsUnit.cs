@@ -14,12 +14,13 @@ public sealed class UpsUnit : ObservableObject
     /// <param name="save">Saves the settings.</param>
     /// <param name="rulesChanged">Applies changed event limits to its monitor.</param>
     /// <param name="renamed">The user renamed it.</param>
-    internal UpsUnit(UpsSettings settings, ElevatedTasks elevated, Action save, Action rulesChanged, Action renamed)
+    /// <param name="trayChanged">The user changed how the tray icon shows it.</param>
+    internal UpsUnit(UpsSettings settings, ElevatedTasks elevated, Action save, Action rulesChanged, Action renamed, Action trayChanged)
     {
         Settings = settings;
         EventScripts = new ObservableCollection<EventScriptsViewModel>(Enum.GetValues<UpsEventKind>()
             .Select(kind => new EventScriptsViewModel(kind, settings.ScriptsFor(kind), elevated, save)));
-        Configuration = new UpsConfigurationViewModel(settings, save, rulesChanged, renamed);
+        Configuration = new UpsConfigurationViewModel(settings, save, rulesChanged, renamed, trayChanged);
         Title = settings.Label ?? settings.Device.Title;
     }
 
@@ -35,7 +36,7 @@ public sealed class UpsUnit : ObservableObject
     public DashboardViewModel Dashboard { get; } = new();
     public ObservableCollection<EventScriptsViewModel> EventScripts { get; }
 
-    /// <summary>Its own settings: name, event limits and notifications.</summary>
+    /// <summary>Its own settings: name, event limits, notifications and the tray icon.</summary>
     public UpsConfigurationViewModel Configuration { get; }
 
     /// <summary>Polls it; null while it isn't monitored.</summary>

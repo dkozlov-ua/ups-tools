@@ -276,6 +276,39 @@
                                    Text="Windows decides whether they pop up: Do not disturb, focus sessions and the per-app switch for UPS Tools in Windows notification settings can hide them." />
                     </StackPanel>
                 </Border>
+
+                <!-- The tray icon -->
+                <Border Style="{StaticResource Card}" DataContext="{Binding Configuration}">
+                    <StackPanel>
+                        <TextBlock Text="Tray icon" Style="{StaticResource CardTitle}" Margin="0,0,0,8" />
+
+                        <CheckBox IsChecked="{Binding ShowInTray}" AutomationProperties.Name="Show in the tooltip">
+                            <StackPanel>
+                                <TextBlock Text="Show in the tooltip" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Style="{StaticResource Detail}"
+                                           Text="A line about this UPS in the tray icon's tooltip, e.g. &quot;Grid online · 80 % · 120 W load&quot;. Windows shows 127 characters at most, so with several UPSes, leave out the ones you don't need to see there." />
+                            </StackPanel>
+                        </CheckBox>
+
+                        <TextBlock Style="{StaticResource Detail}" Margin="0,14,0,8"
+                                   Text="The icon takes the colour of the UPS that needs attention most: yellow on battery after &quot;Grid lost&quot;, red after &quot;Battery low&quot; (until the grid is back) and &quot;UPS unreachable&quot;. Change the colour for these events of this UPS:" />
+                        <ItemsControl ItemsSource="{Binding TrayEvents}" AutomationProperties.AutomationId="TrayEvents">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="3" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsEnabled}" Content="{Binding Title}" Margin="0,0,12,6"
+                                              AutomationProperties.Name="{Binding Title, StringFormat=Tray icon on {0}}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Style="{StaticResource Detail}" Margin="0,2,0,0"
+                                   Text="With an event off, this UPS leaves the icon as it was: on battery, it counts as on the grid; with its battery low, as on battery; unreachable, as its last reading says." />
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <!-- About -->

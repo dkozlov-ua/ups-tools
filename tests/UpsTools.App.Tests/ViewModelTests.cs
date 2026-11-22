@@ -72,6 +72,53 @@ public class DashboardViewModelTests
         Assert.Equal((TrayState.Problem, "UPS unreachable"), (_vm.State, _vm.Summary));
     }
 
+    [Fact]
+    public void Its_tray_colour_can_leave_out_being_on_battery_or_unreachable()
+    {
+        _vm.SetDevice(new PairedUps("x", "a", "n", "EL100V2"));
+        _vm.SetLink(LinkStatus.Unreachable); // without a reading yet
+        Assert.Equal((TrayState.Problem, TrayState.Neutral), (_vm.TrayStateWith(true, true, true), _vm.TrayStateWith(true, true, false)));
+
+        _vm.SetLink(LinkStatus.Online);
+        _vm.Apply(Status with { GridPresent = false });
+        Assert.Equal(TrayState.OnBattery, _vm.TrayStateWith(onBattery: true, batteryLow: true, unreachable: false));
+        Assert.Equal(TrayState.GridOnline, _vm.TrayStateWith(onBattery: false, batteryLow: true, unreachable: true));
+
+        // Unreachable: as its last reading says, on battery unless that is left out too.
+        _vm.SetLink(LinkStatus.Unreachable);
+        Assert.Equal(TrayState.Problem, _vm.TrayStateWith(onBattery: false, batteryLow: true, unreachable: true));
+        Assert.Equal(TrayState.OnBattery, _vm.TrayStateWith(onBattery: true, batteryLow: true, unreachable: false));
+        Assert.Equal(TrayState.GridOnline, _vm.TrayStateWith(onBattery: false, batteryLow: true, unreachable: false));
+        _vm.Apply(Status);
+        Assert.Equal(TrayState.GridOnline, _vm.TrayStateWith(onBattery: true, batteryLow: true, unreachable: false));
+    }
+
+    [Fact]
+    public void A_low_battery_is_red_until_the_grid_is_back()
+    {
+        _vm.SetDevice(new PairedUps("x", "a", "n", "EL100V2"));
+        _vm.SetLink(LinkStatus.Online);
+        _vm.Apply(Status with { GridPresent = false, BatteryPercent = 15 });
+        _vm.SetBatteryLow(true);
+        Assert.Equal(TrayState.Problem, _vm.State);
+        Assert.StartsWith("Battery low · 15 % · ", _vm.Summary);
+        Assert.Equal(TrayState.Problem, _vm.TrayStateWith(onBattery: true, batteryLow: true, unreachable: true));
+        Assert.Equal(TrayState.OnBattery, _vm.TrayStateWith(onBattery: true, batteryLow: false, unreachable: true));
+        Assert.Equal(TrayState.GridOnline, _vm.TrayStateWith(onBattery: false, batteryLow: false, unreachable: true));
+
+        // Unreachable with the switch for that off: still low, as far as anyone knows.
+        _vm.SetLink(LinkStatus.Unreachable);
+        Assert.Equal(TrayState.Problem, _vm.TrayStateWith(onBattery: true, batteryLow: true, unreachable: false));
+
+        // The grid is back: over, even before "Grid restored" says so.
+        _vm.SetLink(LinkStatus.Online);
+        _vm.Apply(Status);
+        Assert.False(_vm.IsBatteryLow);
+        Assert.Equal(TrayState.GridOnline, _vm.State);
+        _vm.Apply(Status with { GridPresent = false });
+        Assert.Equal(TrayState.OnBattery, _vm.State);
+    }
+
     [Theory]
     [InlineData(LinkStatus.NotPaired, "Not paired", true)]
     [InlineData(LinkStatus.Connecting, "Connecting…", true)]
@@ -203,6 +250,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
     private int _monitorChanges;
     private int _saves;
     private int _renames;
+    private int _trayChanges;
     private readonly ConfigurationViewModel _vm;
     private readonly UpsConfigurationViewModel _upsVm;
 
@@ -211,7 +259,7 @@ public sealed class ConfigurationViewModelTests : IDisposable
         StartupRegistration.SetEnabled(false);
         _log = new AppLog(_folder.Path);
         _vm = new ConfigurationViewModel(_settings, _log, () => _saves++, () => _monitorChanges++);
-        _upsVm = new UpsConfigurationViewModel(_ups, () => _saves++, () => _monitorChanges++, () => _renames++);
+        _upsVm = new UpsConfigurationViewModel(_ups, () => _saves++, () => _monitorChanges++, () => _renames++, () => _trayChanges++);
     }
 
     public void Dispose()
@@ -229,6 +277,8 @@ public sealed class ConfigurationViewModelTests : IDisposable
         Assert.Equal(("20", "10", "0", "0"), (_upsVm.BatteryLowPercent.Text, _upsVm.BatteryLowMinutes.Text, _upsVm.GridLostDelay.Text, _upsVm.UnreachableOnBattery.Text));
         Assert.Matches(@"^Version \d+\.\d+\.\d+$", _vm.Version);
         Assert.Equal(["Grid lost", "Battery low", "Grid restored", "UPS unreachable", "UPS reachable again"], _upsVm.Notifications.Select(n => n.Title));
+        Assert.True(_upsVm.ShowInTray);
+        Assert.Equal([("Grid lost", true), ("Battery low", true), ("UPS unreachable", true)], _upsVm.TrayEvents.Select(e => (e.Title, e.IsEnabled)));
         Assert.Equal(0, _saves);
     }
 
@@ -376,6 +426,27 @@ public sealed class ConfigurationViewModelTests : IDisposable
         Assert.True(_ups.NotifyOn(UpsEventKind.GridLost));
         Assert.Equal(["IsEnabled"], changed);
         Assert.Equal(1, _saves);
+        Assert.Equal(0, _trayChanges);
+    }
+
+    [Fact]
+    public void Tray_switches_save_and_update_the_tray()
+    {
+        var changed = new List<string?>();
+        _upsVm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        _upsVm.ShowInTray = true; // already on
+        _upsVm.ShowInTray = false;
+        Assert.False(_ups.ShowInTray);
+        Assert.Equal(["ShowInTray"], changed);
+        Assert.Equal((1, 1), (_saves, _trayChanges));
+
+        var unreachable = _upsVm.TrayEvents.Single(e => e.Kind == UpsEventKind.UpsUnreachable);
+        unreachable.IsEnabled = false;
+        Assert.False(_ups.TrayOn(UpsEventKind.UpsUnreachable));
+        Assert.True(_ups.TrayOn(UpsEventKind.GridLost));
+        Assert.True(_ups.NotifyOn(UpsEventKind.UpsUnreachable)); // the notification is another switch
+        Assert.Equal((2, 2), (_saves, _trayChanges));
     }
 }
 
