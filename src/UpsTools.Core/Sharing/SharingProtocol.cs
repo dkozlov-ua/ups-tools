@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace UpsTools.Core.Sharing;
 
@@ -57,16 +58,31 @@ internal sealed record SharingResponse
     public int PeriodSeconds { get; init; }
 }
 
+/// <summary>
+/// The JSON of the sharing protocol and the announcements. Serializers generated at build time
+/// (<see cref="SharingJsonContext"/>), so that it works in a trimmed app (Android) as it does on Windows; the options
+/// are the wire format, the same on every PC and phone.
+/// </summary>
 internal static class SharingJson
 {
     public static readonly JsonSerializerOptions Options = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
         IgnoreReadOnlyProperties = true,
+        TypeInfoResolver = SharingJsonContext.Default,
     };
 
-    public static byte[] Write<T>(T value) => JsonSerializer.SerializeToUtf8Bytes(value, Options);
+    public static JsonTypeInfo<T> Info<T>() => (JsonTypeInfo<T>)Options.GetTypeInfo(typeof(T));
+
+    public static byte[] Write<T>(T value) => JsonSerializer.SerializeToUtf8Bytes(value, Info<T>());
 
     public static T Read<T>(byte[] json) =>
-        JsonSerializer.Deserialize<T>(json, Options) ?? throw new SharingException("Unexpected data on the link");
+        JsonSerializer.Deserialize(json, Info<T>()) ?? throw new SharingException("Unexpected data on the link");
 }
+
+[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault, IgnoreReadOnlyProperties = true)]
+[JsonSerializable(typeof(SharingRequest))]
+[JsonSerializable(typeof(SharingResponse))]
+[JsonSerializable(typeof(Announcement.Header))]
+[JsonSerializable(typeof(Announcement.Body))]
+internal sealed partial class SharingJsonContext : JsonSerializerContext;

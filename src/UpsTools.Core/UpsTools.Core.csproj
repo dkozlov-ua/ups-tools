@@ -2,7 +2,24 @@
 
   <PropertyGroup>
     <RootNamespace>UpsTools.Core</RootNamespace>
+    <!--
+      Windows: the app, with Bluetooth LE through WinRT (Ble\Windows). net10.0: everything but that, for the Android
+      app (src/UpsTools.Android), which brings its own Bluetooth LE (IBlePlatform). Neither needs a workload.
+    -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
   </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'windows'">
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+    <!-- The Android app is trimmed: the analyzers flag what wouldn't survive it (e.g. JSON through reflection). -->
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'windows'">
+    <Compile Remove="Ble\Windows\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="UpsTools.Tests" />

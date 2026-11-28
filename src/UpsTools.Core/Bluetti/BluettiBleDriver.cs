@@ -2,22 +2,29 @@ using UpsTools.Core.Ble;
 
 namespace UpsTools.Core.Bluetti;
 
-public sealed class BluettiBleDriver(Action<string>? log = null) : IUpsDriver
+/// <param name="ble">The platform's Bluetooth LE: <see cref="BlePlatform.Default"/> unless given.</param>
+public sealed class BluettiBleDriver(Action<string>? log = null, IBlePlatform? ble = null) : IUpsDriver
 {
     public const string DriverId = "bluetti-ble";
 
     private static readonly IReadOnlyList<GattChannel> Channels = [GattChannel.FromShortIds(0xff01, 0xff02)];
 
+    private readonly IBlePlatform _ble = ble ?? BlePlatform.Default;
+
     public string Id => DriverId;
     public string DisplayName => "Bluetti (Bluetooth LE)";
 
     public Task DiscoverAsync(Action<DiscoveredUps> onFound, TimeSpan duration, CancellationToken cancellationToken) =>
-        BleAdapter.ScanAsync(args =>
+        _ble.ScanAsync(ad =>
         {
-            var name = args.Advertisement.LocalName;
-            if (BluettiModels.FromAdvertisedName(name) is not { } model) return;
-            onFound(new DiscoveredUps(DriverId, BluetoothAddressFormat.Format(args.BluetoothAddress), name, model.Name, args.RawSignalStrengthInDBm));
+            if (FromAdvertisement(ad) is { } found) onFound(found);
         }, duration, cancellationToken);
+
+    /// <summary>The Bluetti UPS that sent the advertisement, if a supported one did.</summary>
+    internal static DiscoveredUps? FromAdvertisement(BleAdvertisement ad) =>
+        BluettiModels.FromAdvertisedName(ad.LocalName ?? "") is { } model
+            ? new DiscoveredUps(DriverId, BluetoothAddressFormat.Format(ad.Address), ad.LocalName!, model.Name, ad.Rssi)
+            : null;
 
     public IUpsConnection CreateConnection(PairedUps device)
     {
@@ -26,6 +33,6 @@ public sealed class BluettiBleDriver(Action<string>? log = null) : IUpsDriver
         var address = BluetoothAddressFormat.Parse(device.Address);
         Action<string>? trace = BluettiConnection.TraceEnabled ? message => log?.Invoke($"[trace] {message}") : null;
         return new BluettiConnection(model, BluetoothAddressFormat.Format(address),
-            ct => GattLink.ConnectAsync(address, Channels, "Bluetti", trace, ct), log);
+            ct => _ble.ConnectAsync(address, Channels, "Bluetti", trace, ct), log);
     }
 }

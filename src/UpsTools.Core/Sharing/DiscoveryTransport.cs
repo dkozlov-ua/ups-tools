@@ -26,6 +26,7 @@ public sealed class MulticastTransport : IDiscoveryTransport
 
     private readonly int _port;
     private readonly bool _loopbackOnly;
+    private readonly Func<IReadOnlyList<IPAddress>>? _interfaces;
     private readonly Socket _socket;
     private readonly CancellationTokenSource _stop = new();
     private readonly HashSet<IPAddress> _joined = [];
@@ -33,10 +34,15 @@ public sealed class MulticastTransport : IDiscoveryTransport
 
     /// <param name="port">The UDP port, the same on every PC.</param>
     /// <param name="loopbackOnly">This PC only (the tests: no firewall prompt).</param>
-    public MulticastTransport(int port, bool loopbackOnly)
+    /// <param name="interfaces">
+    /// The IPv4 addresses of the networks to announce on, where the platform knows them better than
+    /// <see cref="NetworkInterface"/> can tell (Android); null: every network that is up and carries multicast.
+    /// </param>
+    public MulticastTransport(int port, bool loopbackOnly, Func<IReadOnlyList<IPAddress>>? interfaces = null)
     {
         _port = port;
         _loopbackOnly = loopbackOnly;
+        _interfaces = interfaces;
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true); // other copies on this PC listen too
         _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
@@ -58,6 +64,7 @@ public sealed class MulticastTransport : IDiscoveryTransport
         if (_loopbackOnly) return [IPAddress.Loopback];
         try
         {
+            if (_interfaces is not null) return _interfaces();
             return [.. NetworkInterface.GetAllNetworkInterfaces()
                 .Where(n => n.OperationalStatus == OperationalStatus.Up && n.SupportsMulticast
                     && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
@@ -65,7 +72,7 @@ public sealed class MulticastTransport : IDiscoveryTransport
                 .Select(a => a.Address)
                 .Where(a => a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a))];
         }
-        catch (NetworkInformationException)
+        catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException or InvalidOperationException)
         {
             return [];
         }

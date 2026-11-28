@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Android app: monitoring and network sharing (no scripts). Needs the .NET "android" workload, so it isn't in
+    UpsTools.slnx (building the Windows app doesn't need it): see README.md → Android.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>UpsTools.Droid</RootNamespace>
+    <AssemblyName>UpsTools.Android</AssemblyName>
+    <ApplicationId>com.dkozlov.upstools</ApplicationId>
+    <ApplicationTitle>UPS Tools</ApplicationTitle>
+    <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
+    <!-- X.Y.Z → X·10000 + Y·100 + Z: each release a higher versionCode, as Android wants for updates. -->
+    <ApplicationVersion>$([MSBuild]::Add($([MSBuild]::Add($([MSBuild]::Multiply($(Version.Split('.')[0]), 10000)), $([MSBuild]::Multiply($(Version.Split('.')[1]), 100)))), $(Version.Split('.')[2])))</ApplicationVersion>
+    <!-- A plain APK, to install by hand or from the app's own update (see the signing key below). -->
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <!--
+      Release builds are trimmed and compiled ahead of time (the SDK's defaults): a smaller APK that starts faster.
+      That works because the JSON (settings, the sharing protocol) goes through serializers generated at build time,
+      not reflection, and the trim analyzers (TreatWarningsAsErrors) catch anything that wouldn't survive it.
+    -->
+    <TrimMode>full</TrimMode>
+    <!-- One APK that installs on any phone, also when built in Debug and copied off this PC. -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <RuntimeIdentifiers>android-arm64;android-arm;android-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!--
+    Release builds are signed with the app's own key, so that each one updates the installed app: an APK signed with
+    another key can't, it could only replace the app after an uninstall that loses its settings. The key is outside
+    the repo, in ~/.upstools-android (release.keystore, and keystore-password with its password), which chezmoi syncs
+    from the private configs repo; UpsToolsKeystoreFolder points elsewhere. Without it, Release fails rather than
+    fall back to the SDK's debug key. Debug builds use the debug key, as usual.
+  -->
+  <PropertyGroup>
+    <UpsToolsKeystoreFolder Condition="'$(UpsToolsKeystoreFolder)' == ''">$(USERPROFILE)\.upstools-android</UpsToolsKeystoreFolder>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(UpsToolsKeystoreFolder)\release.keystore</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias>upstools</AndroidSigningKeyAlias>
+    <AndroidSigningStorePass>file:$(UpsToolsKeystoreFolder)\keystore-password</AndroidSigningStorePass>
+    <!--
+      The same password, from a copy: apksigner reads a file named for both passwords as two lines (the first for
+      the store, the next for the key). From files, so that it never shows in a command line or the build log.
+    -->
+    <UpsToolsKeyPassFile>$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)key-password</UpsToolsKeyPassFile>
+    <AndroidSigningKeyPass>file:$(UpsToolsKeyPassFile)</AndroidSigningKeyPass>
+  </PropertyGroup>
+  <Target Name="UpsToolsKeyPassFile" BeforeTargets="_Sign" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(UpsToolsKeystoreFolder)\keystore-password" DestinationFiles="$(UpsToolsKeyPassFile)" />
+  </Target>
+  <Target Name="UpsToolsCheckKeystore" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Error Condition="!Exists('$(AndroidSigningKeyStore)') Or !Exists('$(UpsToolsKeystoreFolder)\keystore-password')"
+           Text="The app's signing key isn't in $(UpsToolsKeystoreFolder) (release.keystore and keystore-password): 'chezmoi update' brings it from the configs repo. Never make a new one: an APK signed with it couldn't update the installed app." />
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UpsTools.Core\UpsTools.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    Shared with the Windows app as they are: the dashboard's texts and the log. They don't touch WPF; what they need
+    from the Windows app (TrayState, SettingsStore.DefaultFolder) is in Shared.
+  -->
+  <ItemGroup>
+    <Compile Include="..\UpsTools\ViewModels\ObservableObject.cs" Link="Linked\ObservableObject.cs" />
+    <Compile Include="..\UpsTools\ViewModels\DashboardViewModel.cs" Link="Linked\DashboardViewModel.cs" />
+    <Compile Include="..\UpsTools\Services\AppLog.cs" Link="Linked\AppLog.cs" />
+  </ItemGroup>
+
+</Project>

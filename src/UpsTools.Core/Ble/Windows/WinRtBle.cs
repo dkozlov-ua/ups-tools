@@ -1,8 +1,22 @@
+using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Radios;
 
 namespace UpsTools.Core.Ble;
+
+/// <summary>Bluetooth LE through WinRT: scanning (<see cref="BleAdapter"/>) and links (<see cref="GattLink"/>).</summary>
+internal sealed class WinRtBle : IBlePlatform
+{
+    public Task ScanAsync(Action<BleAdvertisement> onReceived, TimeSpan duration, CancellationToken cancellationToken) =>
+        BleAdapter.ScanAsync(args => onReceived(new BleAdvertisement(args.BluetoothAddress, args.Advertisement.LocalName,
+            args.RawSignalStrengthInDBm,
+            [.. args.Advertisement.ManufacturerData.Select(m => (m.CompanyId, m.Data.ToArray()))])), duration, cancellationToken);
+
+    public Task<IBleLink> ConnectAsync(ulong address, IReadOnlyList<GattChannel> channels, string brand, Action<string>? trace,
+        CancellationToken cancellationToken) =>
+        GattLink.ConnectAsync(address, channels, brand, trace, cancellationToken);
+}
 
 /// <summary>The PC's Bluetooth LE adapter: checks that it can be used, and scans.</summary>
 internal static class BleAdapter
@@ -60,13 +74,4 @@ internal static class BleAdapter
             watcher.Stop();
         }
     }
-}
-
-public static class BluetoothAddressFormat
-{
-    public static string Format(ulong address) =>
-        string.Join(':', Enumerable.Range(0, 6).Select(i => ((address >> (8 * (5 - i))) & 0xFF).ToString("X2")));
-
-    public static ulong Parse(string address) =>
-        Convert.ToUInt64(address.Replace(":", "").Replace("-", ""), 16);
 }

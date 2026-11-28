@@ -1,6 +1,6 @@
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace UpsTools.Core.EcoFlow;
 
@@ -15,22 +15,24 @@ public static class EcoFlowAccount
     /// <summary>Returns the user ID; throws <see cref="IOException"/> with EcoFlow's reason when sign-in fails.</summary>
     public static async Task<string> GetUserIdAsync(HttpClient http, string email, string password, CancellationToken ct)
     {
-        var request = new
-        {
-            email = email.Trim(),
-            password = Convert.ToBase64String(Encoding.UTF8.GetBytes(password)),
-            scene = "IOT_APP",
-            appVersion = "1.0.0",
-            oauth = new { bundleId = "com.ef.EcoFlow" },
-            userType = "ECOFLOW",
-        };
-
-        using var response = await http.PostAsJsonAsync(LoginUri, request, ct);
+        using var content = new StringContent(RequestJson(email, password), Encoding.UTF8, "application/json");
+        using var response = await http.PostAsync(LoginUri, content, ct);
         if (!response.IsSuccessStatusCode)
             throw new IOException($"EcoFlow sign-in failed ({(int)response.StatusCode} {response.ReasonPhrase})");
 
         return UserIdFromResponse(await response.Content.ReadAsStringAsync(ct));
     }
+
+    /// <summary>What the sign-in sends, as the EcoFlow app does: the password base64-encoded.</summary>
+    internal static string RequestJson(string email, string password) => new JsonObject
+    {
+        ["email"] = email.Trim(),
+        ["password"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(password)),
+        ["scene"] = "IOT_APP",
+        ["appVersion"] = "1.0.0",
+        ["oauth"] = new JsonObject { ["bundleId"] = "com.ef.EcoFlow" },
+        ["userType"] = "ECOFLOW",
+    }.ToJsonString();
 
     /// <summary>The user ID in a sign-in response: <c>{"code": "0", "data": {"user": {"userId": "…"}}}</c>.</summary>
     internal static string UserIdFromResponse(string json)

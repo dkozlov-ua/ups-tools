@@ -49,14 +49,14 @@ public sealed record Announcement(
     /// <summary>An announcement older than this (by the sender's clock) is ignored: it was played back.</summary>
     public static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(10);
 
-    private sealed record Header(string Instance, string Pc);
+    internal sealed record Header(string Instance, string Pc);
 
-    private sealed record Body(int Port, long SentMs, IReadOnlyList<AnnouncedUps> Upses, bool Probe, bool Bye);
+    internal sealed record Body(int Port, long SentMs, IReadOnlyList<AnnouncedUps> Upses, bool Probe, bool Bye);
 
     public byte[] Seal(byte[] key, byte[] fingerprint, DateTimeOffset now)
     {
-        var header = JsonSerializer.SerializeToUtf8Bytes(new Header(Instance, Pc), SharingJson.Options);
-        var body = JsonSerializer.SerializeToUtf8Bytes(new Body(Port, now.ToUnixTimeMilliseconds(), Upses, Probe, Bye), SharingJson.Options);
+        var header = SharingJson.Write(new Header(Instance, Pc));
+        var body = SharingJson.Write(new Body(Port, now.ToUnixTimeMilliseconds(), Upses, Probe, Bye));
 
         var clear = new byte[Magic.Length + FingerprintLength + 2 + header.Length];
         Magic.CopyTo(clear, 0);
@@ -86,7 +86,7 @@ public sealed record Announcement(
             var headerLength = BinaryPrimitives.ReadUInt16BigEndian(datagram.AsSpan(Magic.Length + FingerprintLength));
             var bodyStart = headerStart + headerLength + NonceLength;
             if (datagram.Length < bodyStart + TagLength) return null;
-            var header = JsonSerializer.Deserialize<Header>(datagram.AsSpan(headerStart, headerLength), SharingJson.Options);
+            var header = JsonSerializer.Deserialize(datagram.AsSpan(headerStart, headerLength), SharingJson.Info<Header>());
             if (header?.Instance is null || header.Pc is null) return null;
 
             if (!datagram.AsSpan(Magic.Length, FingerprintLength).SequenceEqual(fingerprint))
@@ -99,7 +99,7 @@ public sealed record Announcement(
             using (var aes = new AesGcm(key, TagLength))
                 aes.Decrypt(datagram.AsSpan(headerStart + headerLength, NonceLength), datagram.AsSpan(bodyStart, body.Length),
                     datagram.AsSpan(datagram.Length - TagLength), body, datagram.AsSpan(0, headerStart + headerLength));
-            var opened = JsonSerializer.Deserialize<Body>(body, SharingJson.Options);
+            var opened = JsonSerializer.Deserialize(body, SharingJson.Info<Body>());
             if (opened is null || (now - DateTimeOffset.FromUnixTimeMilliseconds(opened.SentMs)).Duration() > MaxAge) return null;
             return new Announcement(header.Instance, header.Pc, opened.Port, opened.Upses ?? [], opened.Probe, opened.Bye);
         }

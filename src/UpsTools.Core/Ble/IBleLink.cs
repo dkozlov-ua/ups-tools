@@ -2,9 +2,9 @@ namespace UpsTools.Core.Ble;
 
 /// <summary>
 /// A connected link to a device's data channel over Bluetooth LE: notifications from the device and writes to it.
-/// <see cref="GattLink"/> is the real one; the tests use simulated devices.
+/// The platform's <see cref="IBlePlatform"/> opens the real one; the tests use simulated devices.
 /// </summary>
-internal interface IBleLink : IAsyncDisposable
+public interface IBleLink : IAsyncDisposable
 {
     /// <summary>A notification from the device. Raised on any thread.</summary>
     event Action<byte[]>? Received;
@@ -22,7 +22,7 @@ internal interface IBleLink : IAsyncDisposable
 internal delegate Task<IBleLink> BleLinkFactory(CancellationToken ct);
 
 /// <summary>A device's data channel: the characteristic it notifies on and the one it is written to.</summary>
-internal sealed record GattChannel(Guid Notify, Guid Write)
+public sealed record GattChannel(Guid Notify, Guid Write)
 {
     public static GattChannel FromShortIds(uint notify, uint write) => new(ShortUuid(notify), ShortUuid(write));
 

@@ -20,15 +20,23 @@ internal sealed class EcoFlowCrypto : IDisposable
     /// <summary>secp160r1 coordinates are 20 bytes, big-endian.</summary>
     private const int CoordinateLength = 20;
 
-    private static readonly ECCurve Curve = ECCurve.CreateFromFriendlyName("secP160r1");
+    /// <summary>Made when used: a platform without the curve (Android) never asks for it.</summary>
+    private static ECCurve Curve => ECCurve.CreateFromFriendlyName("secP160r1");
 
     // secp160r1: y² = x³ + ax + b (mod p), a = p − 3
     private static readonly BigInteger P = BigInteger.Parse("00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7FFFFFFF", NumberStyles.HexNumber);
     private static readonly BigInteger B = BigInteger.Parse("001C97BEFC54BD7A8B65ACF89F81D4D4ADC565FA45", NumberStyles.HexNumber);
 
+    /// <summary>CNG on Windows; the managed <see cref="Secp160r1"/> elsewhere (tests can choose).</summary>
+    private readonly bool _managed;
+
     private ECDiffieHellman? _ephemeral;
+    private Secp160r1? _managedEphemeral;
     private byte[]? _key;
     private byte[]? _iv;
+
+    /// <param name="managed">Use the managed secp160r1, as where the platform lacks it; null: only where it does.</param>
+    public EcoFlowCrypto(bool? managed = null) => _managed = managed ?? !OperatingSystem.IsWindows();
 
     /// <summary>The session key is in place: packets can be sent and read.</summary>
     public bool HasSessionKey { get; private set; }
@@ -37,6 +45,11 @@ internal sealed class EcoFlowCrypto : IDisposable
     public byte[] StartKeyExchange()
     {
         Reset();
+        if (_managed)
+        {
+            _managedEphemeral = new Secp160r1();
+            return [0x01, 0x00, .. _managedEphemeral.PublicKey];
+        }
         _ephemeral = ECDiffieHellman.Create(Curve);
         var q = _ephemeral.ExportParameters(false).Q;
         return [0x01, 0x00, .. PublicPoint(q.X!, q.Y!)];
@@ -45,7 +58,7 @@ internal sealed class EcoFlowCrypto : IDisposable
     /// <summary>Takes the device's public key reply (0x01, status, curve, X‖Y) and sets the temporary key.</summary>
     public void HandlePublicKey(byte[] reply)
     {
-        if (_ephemeral is null) throw new InvalidOperationException("No key exchange in progress");
+        if (_ephemeral is null && _managedEphemeral is null) throw new InvalidOperationException("No key exchange in progress");
         if (reply.Length < 3 + 2 * CoordinateLength || reply[0] != 0x01)
             throw new IOException($"Unexpected public key reply: {Convert.ToHexString(reply)}");
         if (reply[2] != 0) throw new IOException($"The UPS uses an unsupported key type ({reply[2]})");
@@ -53,8 +66,16 @@ internal sealed class EcoFlowCrypto : IDisposable
         var x = reply[3..(3 + CoordinateLength)];
         var y = reply[(3 + CoordinateLength)..(3 + 2 * CoordinateLength)];
         if (!OnCurve(x, y)) throw new IOException("The UPS's public key is not on the curve");
-        using var peer = ECDiffieHellman.Create(new ECParameters { Curve = Curve, Q = new ECPoint { X = x, Y = y } });
-        var shared = _ephemeral.DeriveRawSecretAgreement(peer.PublicKey);
+        byte[] shared;
+        if (_managedEphemeral is not null)
+        {
+            shared = _managedEphemeral.DeriveSecret(x, y);
+        }
+        else
+        {
+            using var peer = ECDiffieHellman.Create(new ECParameters { Curve = Curve, Q = new ECPoint { X = x, Y = y } });
+            shared = _ephemeral!.DeriveRawSecretAgreement(peer.PublicKey);
+        }
         _key = shared[..16];
         _iv = MD5.HashData(shared);
     }
@@ -132,6 +153,7 @@ internal sealed class EcoFlowCrypto : IDisposable
     {
         _ephemeral?.Dispose();
         _ephemeral = null;
+        _managedEphemeral = null;
         _key = null;
         _iv = null;
         HasSessionKey = false;

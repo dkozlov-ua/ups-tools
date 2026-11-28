@@ -66,24 +66,28 @@ public sealed class SimulatedUpsDriver : IUpsDriver
     }
 
     /// <summary>What the file says. Null values are readings the UPS doesn't report.</summary>
+    /// <remarks>
+    /// Settable, not init-only: the JSON serializer generated at build time sets every init-only property, so one the
+    /// file leaves out would lose its default here.
+    /// </remarks>
     public sealed record SimulatedReading
     {
         /// <summary>Polls fail with this message.</summary>
-        public string? Fail { get; init; }
+        public string? Fail { get; set; }
 
         /// <summary>Each poll takes this long.</summary>
-        public int DelayMs { get; init; }
+        public int DelayMs { get; set; }
 
-        public string? Serial { get; init; } = "SIM0001";
-        public bool? GridPresent { get; init; } = true;
-        public int? BatteryPercent { get; init; } = 100;
-        public double? CapacityWh { get; init; } = 1024;
-        public double? AcInputVoltage { get; init; }
-        public double? AcOutputVoltage { get; init; }
-        public double? AcInputW { get; init; }
-        public double? DcInputW { get; init; }
-        public double? AcOutputW { get; init; }
-        public double? DcOutputW { get; init; }
+        public string? Serial { get; set; } = "SIM0001";
+        public bool? GridPresent { get; set; } = true;
+        public int? BatteryPercent { get; set; } = 100;
+        public double? CapacityWh { get; set; } = 1024;
+        public double? AcInputVoltage { get; set; }
+        public double? AcOutputVoltage { get; set; }
+        public double? AcInputW { get; set; }
+        public double? DcInputW { get; set; }
+        public double? AcOutputW { get; set; }
+        public double? DcOutputW { get; set; }
 
         public UpsStatus ToStatus(DateTimeOffset timestamp) => new()
         {
@@ -130,6 +134,10 @@ public sealed class SimulatedUpsDriver : IUpsDriver
         {
             throw new IOException("Simulated UPS not found");
         }
-        return JsonSerializer.Deserialize<SimulatedReading>(json) ?? throw new IOException("The simulator file is empty");
+        return JsonSerializer.Deserialize(json, SimulatorJsonContext.Default.SimulatedReading)
+               ?? throw new IOException("The simulator file is empty");
     }
 }
+
+[System.Text.Json.Serialization.JsonSerializable(typeof(SimulatedUpsDriver.SimulatedReading))]
+internal sealed partial class SimulatorJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

@@ -1,3 +1,4 @@
+using UpsTools.Core.Ble;
 using UpsTools.Core.Bluetti;
 using UpsTools.Core.EcoFlow;
 
@@ -7,8 +8,9 @@ namespace UpsTools.Core;
 public sealed class UpsDrivers
 {
     /// <summary>The real drivers, or only the simulator when <see cref="SimulatedUpsDriver.EnvironmentVariable"/> is set.</summary>
-    public UpsDrivers(Action<string>? log = null)
-        : this(SimulatedUpsDriver.FromEnvironment() is { } simulator ? [simulator] : [new BluettiBleDriver(log), new EcoFlowBleDriver(log)])
+    /// <param name="ble">The platform's Bluetooth LE: <see cref="BlePlatform.Default"/> unless given.</param>
+    public UpsDrivers(Action<string>? log = null, IBlePlatform? ble = null)
+        : this(SimulatedUpsDriver.FromEnvironment() is { } simulator ? [simulator] : [new BluettiBleDriver(log, ble), new EcoFlowBleDriver(log, ble)])
     {
     }
 

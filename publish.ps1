@@ -5,8 +5,10 @@
       powershell -File publish.ps1 -Version 1.2.0   must still match VERSION
 
     The release is the repository's LATEST release (not a draft, not a
-    prerelease), tagged vX.Y.Z, carrying UpsTools-X.Y.Z-setup.exe. The notes are
-    docs\release-notes\vX.Y.Z.md. See RELEASE.md for the whole runbook.
+    prerelease), tagged vX.Y.Z, carrying UpsTools-X.Y.Z-setup.exe (Windows) and
+    UpsTools-X.Y.Z-android.apk (Android, built by package-android.ps1, which needs
+    the android workload, the Android SDK and the app's signing key). The notes
+    are docs\release-notes\vX.Y.Z.md. See RELEASE.md for the whole runbook.
 
     It refuses - before building anything - unless:
       - the working tree is clean, untracked files included,
@@ -14,8 +16,9 @@
       - VERSION says the version being published,
       - the release notes exist,
       - no release or tag of that version exists yet,
-      - the app's "Project on GitHub" link (ProjectUrl in ConfigurationView.xaml.cs)
-        is the repository being published to.
+      - the apps' "Project on GitHub" link and update check (ProjectUrl in
+        ConfigurationView.xaml.cs, Repository in the Android app's ApkUpdater.cs)
+        are the repository being published to.
 
     It pushes nothing of its own: the release is created on GitHub with gh,
     which creates the tag there, and the tag is then fetched.
@@ -63,6 +66,11 @@ if ($src -notmatch 'ProjectUrl\s*=\s*"https://github\.com/([^"]+)"') { throw 'Co
 if ($Matches[1] -ne $repo) {
     throw "the app links to $($Matches[1]), but this publishes to $repo"
 }
+$src = [IO.File]::ReadAllText((Join-Path $RepoRoot 'src\UpsTools.Android\Shared\ApkUpdater.cs'))
+if ($src -notmatch 'Repository\s*=\s*"([^"]+)"') { throw 'ApkUpdater.cs has no Repository line' }
+if ($Matches[1] -ne $repo) {
+    throw "the Android app looks for updates on $($Matches[1]), but this publishes to $repo"
+}
 
 # ---- is this commit the one to publish --------------------------------------
 # Untracked files too: a clean tree is what makes the release exactly this commit.
@@ -80,22 +88,29 @@ if ($LASTEXITCODE -eq 0) { throw "release $tag already exists on $repo" }
 # ---- build ------------------------------------------------------------------
 & (Join-Path $RepoRoot 'package.ps1') -Version $Version
 $setup = Join-Path $RepoRoot "Releases\UpsTools-$Version-setup.exe"
-$sha256 = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+& (Join-Path $RepoRoot 'package-android.ps1') -Version $Version
+$apk = Join-Path $RepoRoot "Releases\UpsTools-$Version-android.apk"
+$built = @{}
+foreach ($file in $setup, $apk) {
+    $built[(Split-Path -Leaf $file)] = 'sha256:' + (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+}
 
 # ---- publish ----------------------------------------------------------------
 Write-Host "--- Publishing $tag to $repo at $($sha.Substring(0, 7)) ---"
-& gh release create $tag $setup --repo $repo --target $sha --title "UPS Tools $Version" --notes-file $notes --latest
+& gh release create $tag $setup $apk --repo $repo --target $sha --title "UPS Tools $Version" --notes-file $notes --latest
 if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
 Invoke-Git fetch --quiet origin --tags | Out-Null
 
-# GitHub's own digest of the asset must be the setup that was built.
-# Filtered here, not with -q: Windows PowerShell 5.1 strips the double quotes
-# inside a native argument, so a jq filter naming ".exe" reaches gh as .exe and
-# fails ("expected an object but got: string").
+# GitHub's own digest of each asset must be the file that was built: the apps check
+# their downloads against it. Filtered here, not with -q: Windows PowerShell 5.1
+# strips the double quotes inside a native argument, so a jq filter naming ".exe"
+# reaches gh as .exe and fails ("expected an object but got: string").
 $assets = (& gh release view $tag --repo $repo --json assets) | ConvertFrom-Json
-$digest = @($assets.assets | Where-Object { $_.name -like '*-setup.exe' } | ForEach-Object { $_.digest })[0]
-if ($digest -ne "sha256:$sha256") {
-    Write-Warning "GitHub reports the asset as '$digest', but the setup built here is sha256:$sha256"
-    exit 1
+foreach ($name in $built.Keys) {
+    $digest = @($assets.assets | Where-Object { $_.name -eq $name } | ForEach-Object { $_.digest })[0]
+    if ($digest -ne $built[$name]) {
+        Write-Warning "GitHub reports $name as '$digest', but the one built here is $($built[$name])"
+        exit 1
+    }
 }
 Write-Host "`nPublished UPS Tools ${Version}: https://github.com/$repo/releases/tag/$tag"

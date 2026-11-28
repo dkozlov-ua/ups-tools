@@ -1,8 +1,10 @@
 # Release runbook
 
-UPS Tools ships as a setup, `UpsTools-X.Y.Z-setup.exe`, on this repository's GitHub Releases.
-It installs per user into one fixed folder that every later setup updates in place. There is
-no CI release and no signing: releases are built and published from a local checkout.
+UPS Tools ships as a setup, `UpsTools-X.Y.Z-setup.exe`, and an Android APK,
+`UpsTools-X.Y.Z-android.apk`, on this repository's GitHub Releases. The setup installs per user
+into one fixed folder that every later setup updates in place. There is no CI release:
+releases are built and published from a local checkout. The setup isn't signed; the APK is,
+with the app's own key ([Android](#android)).
 
 ## How it fits together
 
@@ -13,12 +15,17 @@ no CI release and no signing: releases are built and published from a local chec
 - **`package.ps1`** runs the test suite, builds the framework-dependent single-file
   `UpsTools.exe` with `dotnet publish`, and compiles it into
   `Releases\UpsTools-X.Y.Z-setup.exe` with Inno Setup. It builds from the working tree.
-- **`publish.ps1`** checks that the release can go out, runs `package.ps1`, creates the
-  release with `gh release create` (which creates the tag on GitHub), and confirms that
-  GitHub's SHA-256 of the asset is the setup it built.
+- **`package-android.ps1`** runs the Core and Android tests, and builds
+  `Releases\UpsTools-X.Y.Z-android.apk`, signed with the app's key.
+- **`publish.ps1`** checks that the release can go out, runs `package.ps1` and
+  `package-android.ps1`, creates the release with both files with `gh release create` (which
+  creates the tag on GitHub), and confirms that GitHub's SHA-256 of each asset is the file it
+  built: the apps check their updates against it.
 
 Building needs the .NET 10 SDK, the GitHub CLI (`gh`) and Inno Setup 6
-(`winget install JRSoftware.InnoSetup`; a per-user install is enough).
+(`winget install JRSoftware.InnoSetup`; a per-user install is enough), and for the APK the
+android workload, a JDK, the Android SDK and the signing key (see the top of
+`package-android.ps1`).
 
 ## What the setup does
 
@@ -70,6 +77,25 @@ so reinstall the real one afterwards.
 Write them for someone deciding whether to update now: what changed for them and what
 they need to do about it (usually nothing). Say plainly when a change affects the scripts
 users attach to events (which events fire and when), or the Bluetooth connection.
+
+## Android
+
+The APK is signed with the app's own key, `~/.upstools-android/release.keystore`, whose
+password is in `~/.upstools-android/keystore-password`. Both are outside this repository: chezmoi
+syncs them from the private configs repo (`chezmoi update` on a new PC). The Release build signs
+with them and fails without them.
+
+**Never lose or replace the key.** Android installs an APK over the installed app only if it is
+signed with the same key, settings kept. One signed with another key can't update it: the app
+would have to be uninstalled first, which deletes its settings (paired UPSes, the sharing code).
+The key's certificate has SHA-256
+`2D:9C:79:39:4A:05:5E:12:16:66:FC:43:DA:07:50:BE:67:FC:64:30:FD:BE:4F:9E:D9:68:05:6C:80:8E:9E:18`;
+`apksigner verify --print-certs <apk>` shows it.
+
+On the phone, Settings → *Check for updates* installs the latest release's APK after checking it
+against GitHub's SHA-256. To put a build on the phone without releasing it:
+`powershell -File package-android.ps1 -Install`, over USB debugging or Wireless debugging (see
+the top of the script). Release notes should say what changed on the phone too, when anything did.
 
 ## Installing for the first time
 

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Android app's code that doesn't touch Android (src/UpsTools.Android/Shared, and what it shares with the Windows
+    app), compiled here for Windows so that it is tested without a phone or the Android workload.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>UpsTools.Droid.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\UpsTools.Android\Shared\**\*.cs" Link="Shared\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\UpsTools\ViewModels\ObservableObject.cs" Link="Linked\ObservableObject.cs" />
+    <Compile Include="..\..\src\UpsTools\ViewModels\DashboardViewModel.cs" Link="Linked\DashboardViewModel.cs" />
+    <Compile Include="..\..\src\UpsTools\Services\AppLog.cs" Link="Linked\AppLog.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\UpsTools.Core\UpsTools.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -54,6 +54,8 @@ low, and wake the NAS when the grid comes back.
   tray icon shows it.
 - **Updates**: Configuration → About → **Check for updates** looks for a newer release here; **Update to X.Y.Z** downloads
   its setup, checks it against the SHA-256 GitHub lists for it and runs it, which updates the app and opens it again.
+- **Android**: an app for phones and tablets watches the same UPSes, with the dashboard, a notification for each
+  event and network sharing with the PCs; it has no scripts (see [Android](#android)).
 
 | Event | Fires when |
 |---|---|
@@ -130,6 +132,44 @@ derived from the code, and so are the links that carry the readings, so nobody e
 pass off a reading as its own (e.g. a fake *Grid lost* that runs your shutdown scripts). The code itself never goes over
 the network. Windows may ask once whether UPS Tools may use the network: allow it on private networks. A PC with
 sharing off connects over Bluetooth regardless, so turn it on on every PC that has the same UPS paired.
+
+## Android
+
+The Android app (Android 8.0 or later) monitors UPSes as the Windows app does, without the scripts: the dashboard
+(every UPS, with the same readings), a notification for each event (with the same texts, the same event limits and
+the same choice of which events notify), and network sharing. Tested with an EcoFlow River 3 Plus on a Samsung
+Galaxy S22 (Android 16).
+
+- **Install**: download `UpsTools-X.Y.Z-android.apk` from [Releases](https://github.com/dkozlov-ua/ups-tools/releases)
+  on the phone and open it (Android asks once to allow installing apps from that source), or build it and install it
+  over USB or Wi-Fi debugging: `powershell -File package-android.ps1 -Install`. Opening the app asks for *Nearby
+  devices* (Android 12 and later; *Location* before, which Android needs for Bluetooth scans) and for notifications
+  (Android 13 and later).
+- **Updates**: Settings → *Check for updates* looks for a newer release here; *Update to X.Y.Z* downloads its APK,
+  checks it against the SHA-256 GitHub lists for it, and hands it to Android, which asks to confirm (and, the first
+  time, to allow UPS Tools to install apps). The settings stay, and monitoring starts again by itself. Every APK,
+  released or built with `package-android.ps1`, is signed with the same key, so each one updates the installed app;
+  see [RELEASE.md](RELEASE.md#android).
+- **Add UPS** scans for UPSes nearby and lists the ones other devices share, as on Windows; an EcoFlow UPS asks for
+  its account's user ID, or the account's email and password to look it up.
+- **Monitoring** runs in the background, with a notification that stays meanwhile (*Monitoring status*): a line for
+  each UPS, coloured as the tray icon on Windows (and each UPS's settings choose the same way whether it has a line
+  there and which events change the colour). It starts when the app opens, and again when the phone restarts
+  (Settings → *Start when the phone starts*); *Stop monitoring* in that notification or in Settings stops it until
+  the app is opened again.
+- **With the screen off**: Settings → *Keep running with the screen off* (on by default) keeps the processor awake
+  while monitoring, so that polls and events don't wait for the screen to turn on; it costs battery, so it suits a
+  phone or tablet that stays plugged in. Allow UPS Tools to run unrestricted when Settings offers it: some phones
+  stop apps in the background otherwise. If Android froze the app anyway, it notices once it runs again and
+  reconnects from scratch.
+- **Network sharing** works between phones and PCs alike: the same code, the same Wi-Fi network (the phone hears the
+  announcements while it shares). The phone can be the one connected to a UPS, serving the PCs, or read it through a
+  PC. The others call it by its name in Android's settings (*About phone → Device name*), or its model.
+- **Notifications** come in three channels that Android's settings show: *Power problems* (Grid lost, Battery low,
+  UPS unreachable: they pop up and sound), *Power back* (Grid restored, UPS reachable again) and *Monitoring status*.
+- Settings and the log (`settings.json`, `ups-tools.log`) are in the app's own storage; they aren't backed up.
+  Settings → *Share log* sends the log (with the app's and the phone's versions) through Android's share sheet, e.g.
+  to email it or save it to Drive.
 
 ## Requirements
 
@@ -210,21 +250,35 @@ dotnet test tests/UpsTools.Tests        # protocol, monitor, events
 dotnet test tests/UpsTools.App.Tests    # services, view models, the app's controller
 dotnet test tests/UpsTools.UiTests      # end to end: drives the app's windows
 dotnet run --project src/UpsTools
+dotnet test tests/UpsTools.Android.Tests  # the Android app's controller, settings and advertisements, on Windows
+powershell -File package-android.ps1      # the Android APK (needs the android workload, a JDK, the Android SDK and the key)
 ```
+
+The Android app (`src/UpsTools.Android`) isn't in `UpsTools.slnx`, so building the Windows app doesn't need the
+android workload; `dotnet workload install android` installs it, and `package-android.ps1` says how to get the SDK.
+Release builds are trimmed and compiled ahead of time (about 16 MB), so the app's JSON goes through serializers
+generated at build time (`JsonSerializerContext`), never reflection: Core is marked trimmable for `net10.0`, and the
+trim analyzers fail the build on anything that wouldn't survive.
+Core targets `net10.0` too, without the WinRT Bluetooth code (`Ble/Windows`): the Android app brings its own
+(`IBlePlatform`), and the EcoFlow key exchange uses a managed secp160r1 there, as Android has only the NIST curves.
 
 | Path | Contents |
 |---|---|
 | `src/UpsTools.Core` | Device-independent model (`UpsStatus`, `UpsMonitor`, `UpsStateTracker`, `IUpsDriver`), the shared Bluetooth LE link (`Ble`), the Bluetti and EcoFlow BLE drivers and the simulated UPS |
 | `src/UpsTools` | WPF app (Fluent theme, tray icon, settings, script runner) |
+| `src/UpsTools.Android` | Android app: `Shared` (the controller, settings, advertisements; no Android in it) and `Platform` (Bluetooth LE, the foreground service, notifications, the screens). It uses the Windows app's dashboard texts and log as they are |
 | `tests/UpsTools.Tests` | Core: the Bluetti protocol against reference vectors, a real Elite 100 V2 register dump and a simulated device (handshake, fragmented notifications, dropped links, stalls); the EcoFlow protocol against ha-ef-ble's algorithms, real River 3 packets and a simulated device (key exchange, authentication, uploads in parts, silence, reconnects); the monitor, events, script chains, notification texts |
 | `tests/UpsTools.App.Tests` | App: settings, log, Start with Windows, notifications, scripts (real processes), administrator tasks (real Task Scheduler), the uninstaller, tray art, view models, and the controller with a scripted UPS |
+| `tests/UpsTools.Android.Tests` | The Android app's `Shared` code, built for Windows: the controller with a scripted UPS, events and notifications, settings, two phones sharing a UPS, advertisements through the real drivers, updates from GitHub |
 | `tests/UpsTools.UiTests` | End to end: starts `UpsTools.exe` with a simulated UPS and uses it through UI Automation and real mouse and keyboard input |
 | `tools/make-icon.cs` | Regenerates `app.ico`: `dotnet run tools/make-icon.cs` |
 | `VERSION` | The only version, `X.Y.Z` |
 | `installer/UpsTools.iss` | The Inno Setup script for the setup |
 | `package.ps1`, `publish.ps1` | Build the setup, publish a GitHub release: see [RELEASE.md](RELEASE.md) |
+| `package-android.ps1` | Build the Android APK, signed with the app's key (see [RELEASE.md](RELEASE.md#android)); `-Install` puts it on the phone |
 
-To support another manufacturer, implement `IUpsDriver` / `IUpsConnection` and register it in `UpsDrivers`.
+To support another manufacturer, implement `IUpsDriver` / `IUpsConnection` and register it in `UpsDrivers`; a
+Bluetooth LE driver takes the platform's `IBlePlatform`, so that it works on Android too.
 
 ### Testing
 

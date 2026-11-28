@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Android 8–9: light only. -->
+  <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:colorPrimary">#0E7490</item>
+    <item name="android:colorPrimaryDark">#0B5C73</item>
+    <item name="android:colorAccent">#0E7490</item>
+    <item name="android:windowBackground">#F3F4F6</item>
+    <item name="android:statusBarColor">#F3F4F6</item>
+    <item name="android:windowLightStatusBar">true</item>
+  </style>
+</resources>
