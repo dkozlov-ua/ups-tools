@@ -17,6 +17,9 @@ low, and wake the NAS when the grid comes back.
 - **Dashboard**: grid status, battery level, charge/discharge rate, estimated time on battery, input and output power, recent activity.
   With several UPSes, each has a compact panel of its own: six tiles in a row (two rows of three in a narrow window),
   each detail in a tooltip once it doesn't fit; past about two thirds of the window's height, they scroll.
+- **History**: a chart of each UPS's charge and load over the last 6 hours, 24 hours or 7 days, with the outages
+  shaded, the stretches without readings greyed and the events marked; pointing at it shows the reading there. Each
+  PC keeps a point a minute for 7 days, also of a UPS it reads through another one.
 - **Scripts**: attach any number of scripts to each event of each UPS. `.ahk`, `.bat`, `.cmd` and `.exe` files open with their Windows
   file association; `.ps1` files run hidden through PowerShell. Arguments are optional.
   - They start in the listed order; drag a script by its handle (or Alt+Up / Alt+Down) to reorder.
@@ -167,9 +170,27 @@ Galaxy S22 (Android 16).
   PC. The others call it by its name in Android's settings (*About phone → Device name*), or its model.
 - **Notifications** come in three channels that Android's settings show: *Power problems* (Grid lost, Battery low,
   UPS unreachable: they pop up and sound), *Power back* (Grid restored, UPS reachable again) and *Monitoring status*.
-- Settings and the log (`settings.json`, `ups-tools.log`) are in the app's own storage; they aren't backed up.
-  Settings → *Share log* sends the log (with the app's and the phone's versions) through Android's share sheet, e.g.
-  to email it or save it to Drive.
+- **History**: tapping a UPS on the dashboard opens its chart (6 h / 24 h / 7 d, as on Windows; touch it to read a
+  point) and the events of that time. *Settings* there opens the UPS's settings.
+- **Webhooks**: each UPS's settings can have URLs that its events call with a POST, as scripts are on Windows: pick
+  the events, and what the request carries:
+  - **JSON**, for Home Assistant, n8n, Node-RED: `event`, `title`, `message` (the notification's text), `ups`,
+    `grid`, `reachable`, `batteryPercent`, `runtimeMinutes`, `loadW`, `outageSeconds`, `model`, `serial`,
+    `readingTime` and `device` (the phone), as [the scripts' variables](#environment-variables); a value the UPS
+    doesn't report is left out.
+  - **Text**, for ntfy: the notification's text, with its title (and the UPS) in a `Title` header and `Priority:
+    high` for the problems.
+
+  A webhook that fails is tried twice more over half a minute, and the log says how it went; *Send test* sends a
+  *Grid lost* marked `"test": true`.
+- **Tasker, MacroDroid, Automate**: every event is also broadcast to the apps on the phone as
+  `com.dkozlov.upstools.EVENT`, with the same fields as extras (and all of them as JSON in `json`).
+- **At a glance**: a **Quick Settings tile** (the state, e.g. *On battery*, and the charge and load) and a
+  **home-screen widget** (a line per UPS, with a dot in its colour), both following the status notification. Tapping
+  either opens the app.
+- Settings, the log and the history (`settings.json`, `ups-tools.log`, `history/`) are in the app's own storage; they
+  aren't backed up. Settings → *Share log* sends the log (with the app's and the phone's versions) through Android's
+  share sheet, e.g. to email it or save it to Drive.
 
 ## Requirements
 
@@ -189,7 +210,8 @@ signed, so SmartScreen may ask you to confirm (*More info* → *Run anyway*). Se
   account first, or the account's email and password and **Look up user ID**. Do the same for each UPS; pairing one
   that is already in the list again updates it (e.g. its user ID) and keeps its scripts. **Forget** removes a UPS with
   its scripts.
-- Settings and the log are in `%APPDATA%\UpsTools` (`settings.json`, `ups-tools.log`). Settings of 0.6.0 and earlier
+- Settings, the log and the history are in `%APPDATA%\UpsTools` (`settings.json`, `ups-tools.log`, and
+  `history\<id>.txt` for each UPS, a line a minute, kept 7 days). Settings of 0.6.0 and earlier
   (one UPS) are moved into the list of UPSes when the app starts; the old file stays as `settings.json.before-0.7.0`.
 - Notifications are registered as *UPS Tools* (`HKCU\Software\Classes\AppUserModelId\DKozlov.UpsTools`); their images
   are in `%LOCALAPPDATA%\UpsTools`. Windows' own settings (Do not disturb, the per-app switch) decide whether they pop up.
@@ -254,6 +276,11 @@ dotnet test tests/UpsTools.Android.Tests  # the Android app's controller, settin
 powershell -File package-android.ps1      # the Android APK (needs the android workload, a JDK, the Android SDK and the key)
 ```
 
+In a Debug build of the Android app, `files/simulator.json` in its storage makes the simulated UPS the only one, as
+`UPSTOOLS_SIMULATOR` does on Windows: the emulator has no Bluetooth. Write it with
+`adb shell "run-as com.dkozlov.upstools sh -c 'echo {\"GridPresent\": false} > files/simulator.json'"` and restart
+the app; Release builds leave this out.
+
 The Android app (`src/UpsTools.Android`) isn't in `UpsTools.slnx`, so building the Windows app doesn't need the
 android workload; `dotnet workload install android` installs it, and `package-android.ps1` says how to get the SDK.
 Release builds are trimmed and compiled ahead of time (about 16 MB), so the app's JSON goes through serializers
@@ -264,12 +291,12 @@ Core targets `net10.0` too, without the WinRT Bluetooth code (`Ble/Windows`): th
 
 | Path | Contents |
 |---|---|
-| `src/UpsTools.Core` | Device-independent model (`UpsStatus`, `UpsMonitor`, `UpsStateTracker`, `IUpsDriver`), the shared Bluetooth LE link (`Ble`), the Bluetti and EcoFlow BLE drivers and the simulated UPS |
+| `src/UpsTools.Core` | Device-independent model (`UpsStatus`, `UpsMonitor`, `UpsStateTracker`, `IUpsDriver`), the shared Bluetooth LE link (`Ble`), the Bluetti and EcoFlow BLE drivers, the simulated UPS, and the history with its chart's layout (`History`), which each app draws with its own graphics |
 | `src/UpsTools` | WPF app (Fluent theme, tray icon, settings, script runner) |
 | `src/UpsTools.Android` | Android app: `Shared` (the controller, settings, advertisements; no Android in it) and `Platform` (Bluetooth LE, the foreground service, notifications, the screens). It uses the Windows app's dashboard texts and log as they are |
 | `tests/UpsTools.Tests` | Core: the Bluetti protocol against reference vectors, a real Elite 100 V2 register dump and a simulated device (handshake, fragmented notifications, dropped links, stalls); the EcoFlow protocol against ha-ef-ble's algorithms, real River 3 packets and a simulated device (key exchange, authentication, uploads in parts, silence, reconnects); the monitor, events, script chains, notification texts |
 | `tests/UpsTools.App.Tests` | App: settings, log, Start with Windows, notifications, scripts (real processes), administrator tasks (real Task Scheduler), the uninstaller, tray art, view models, and the controller with a scripted UPS |
-| `tests/UpsTools.Android.Tests` | The Android app's `Shared` code, built for Windows: the controller with a scripted UPS, events and notifications, settings, two phones sharing a UPS, advertisements through the real drivers, updates from GitHub |
+| `tests/UpsTools.Android.Tests` | The Android app's `Shared` code, built for Windows: the controller with a scripted UPS, events and notifications, settings, two phones sharing a UPS, advertisements through the real drivers, updates from GitHub, webhooks |
 | `tests/UpsTools.UiTests` | End to end: starts `UpsTools.exe` with a simulated UPS and uses it through UI Automation and real mouse and keyboard input |
 | `tools/make-icon.cs` | Regenerates `app.ico`: `dotnet run tools/make-icon.cs` |
 | `VERSION` | The only version, `X.Y.Z` |

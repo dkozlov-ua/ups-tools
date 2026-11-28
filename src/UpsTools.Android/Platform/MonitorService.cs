@@ -78,7 +78,11 @@ public sealed class MonitorService : Service
         _handler.PostDelayed(() =>
         {
             _statusQueued = false;
-            if (_controller is { } controller && Running) UpsToolsApp.Current.Notifier.UpdateStatus(UpsToolsApp.Current.Notifier.Status(controller));
+            if (_controller is { } controller && Running)
+            {
+                UpsToolsApp.Current.Notifier.UpdateStatus(UpsToolsApp.Current.Notifier.Status(controller));
+                Glance.Update(this);
+            }
         }, (long)StatusInterval.TotalMilliseconds);
     }
 
@@ -134,6 +138,7 @@ public sealed class MonitorService : Service
     public override void OnDestroy()
     {
         Running = false;
+        Glance.Update(this); // the widget and the tile say monitoring is off
         Instance = null;
         if (_controller is { } controller)
         {

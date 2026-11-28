@@ -127,9 +127,13 @@ public sealed class AppController : ObservableObject
     private UpsUnit CreateUnit(UpsSettings settings)
     {
         UpsUnit unit = null!;
-        unit = new UpsUnit(settings, Elevated, Save, () => ApplyRules(unit), RefreshTitles, UpdateTray);
+        unit = new UpsUnit(settings, Elevated, Save, () => ApplyRules(unit), RefreshTitles, UpdateTray,
+            new UpsTools.Core.History.UpsHistory(HistoryPath(settings)));
         return unit;
     }
+
+    /// <summary>Where a UPS's history is kept: history\&lt;its id&gt;.txt next to the settings.</summary>
+    private string HistoryPath(UpsSettings settings) => System.IO.Path.Combine(_store.Folder, "history", settings.Id + ".txt");
 
     /// <summary>
     /// Names each UPS (<see cref="UpsUnit.Title"/>): two of the same model without a name of their own are told apart
@@ -330,6 +334,7 @@ public sealed class AppController : ObservableObject
         monitor.StatusUpdated += status => _ui.InvokeAsync(() =>
         {
             if (unit.Monitor != monitor) return;
+            unit.History.Record(status);
             unit.Dashboard.SetDevice(unit.Device, status.Serial, unit.Title);
             unit.Dashboard.Apply(status);
             UpdateTray();
@@ -381,6 +386,7 @@ public sealed class AppController : ObservableObject
         var monitor = unit.Monitor;
         unit.Monitor = null;
         unit.GridLostAt = null;
+        unit.History.Flush();
         unit.Dashboard.SetBatteryLow(false);
         if (monitor is null) return;
         _coordinator?.Leave(unit.Device);
@@ -450,6 +456,7 @@ public sealed class AppController : ObservableObject
         if (Selected == unit) Selected = Upses.FirstOrDefault(u => u != unit);
         Settings.Upses.Remove(unit.Settings);
         Upses.Remove(unit);
+        unit.History.Delete();
         Save();
         Selected ??= Upses.FirstOrDefault();
         Log.Info($"Forgot {unit.Device.Name}");
@@ -630,6 +637,7 @@ public sealed class AppController : ObservableObject
     {
         var reason = unit.LogPrefix + kind.Title();
         Log.Event(reason);
+        unit.History.Record(kind, kind == UpsEventKind.GridLost ? gridGoneSince ?? status?.Timestamp : status?.Timestamp);
 
         TimeSpan? outage = null;
         var at = status?.Timestamp ?? DateTimeOffset.Now;

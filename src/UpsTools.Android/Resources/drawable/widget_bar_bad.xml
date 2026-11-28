@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The UPS battery widget's bar (widget_ups): a rounded track, filled in the state's colour. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:id="@android:id/background">
+    <shape android:shape="rectangle">
+      <corners android:radius="7dp" />
+      <solid android:color="#33FFFFFF" />
+    </shape>
+  </item>
+  <item android:id="@android:id/progress">
+    <clip>
+      <shape android:shape="rectangle">
+        <corners android:radius="7dp" />
+        <solid android:color="#FFEF4444" />
+      </shape>
+    </clip>
+  </item>
+</layer-list>

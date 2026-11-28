@@ -98,6 +98,35 @@ public sealed class UpsSettings
         [UpsEventKind.GridLost, UpsEventKind.BatteryLow, UpsEventKind.UpsUnreachable];
 
     public bool StatusOn(UpsEventKind kind) => !StatusEvents.TryGetValue(kind, out var on) || on;
+
+    /// <summary>The URLs its events call, as scripts are on Windows (<see cref="UpsTools.Droid.WebhookSender"/>).</summary>
+    public List<WebhookSettings> Webhooks { get; set; } = [];
+}
+
+/// <summary>What a webhook's request carries.</summary>
+public enum WebhookFormat
+{
+    /// <summary>A JSON object: the event and the UPS's state, as the script variables on Windows (Home Assistant, n8n…).</summary>
+    Json,
+
+    /// <summary>The notification's text, its title in a Title header (ntfy, and anything that takes plain text).</summary>
+    Text,
+}
+
+/// <summary>A URL that a UPS's events call with a POST.</summary>
+public sealed class WebhookSettings
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Url { get; set; } = "";
+    public WebhookFormat Format { get; set; } = WebhookFormat.Json;
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>The events that call it; all of them for a new one.</summary>
+    public List<UpsEventKind> Events { get; set; } = [.. Enum.GetValues<UpsEventKind>()];
+
+    /// <summary>An http(s) URL with a host, the only kind it calls.</summary>
+    public static bool IsValidUrl(string url) =>
+        Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" && uri.Host.Length > 0;
 }
 
 /// <summary>Loads and saves <see cref="AppSettings"/> as JSON (settings.json) in the app's storage.</summary>
@@ -131,6 +160,9 @@ public sealed class SettingsStore(AppLog log, string folder)
                 if (string.IsNullOrWhiteSpace(ups.Label)) ups.Label = null;
                 ups.Notifications ??= [];
                 ups.StatusEvents ??= [];
+                ups.Webhooks ??= [];
+                ups.Webhooks.RemoveAll(w => w is null);
+                foreach (var hook in ups.Webhooks) hook.Events ??= [];
                 ups.BatteryLowPercent = Math.Clamp(ups.BatteryLowPercent, 0, AppSettings.MaxBatteryLowPercent);
                 ups.BatteryLowMinutes = Math.Clamp(ups.BatteryLowMinutes, 0, AppSettings.MaxBatteryLowMinutes);
                 ups.GridLostDelaySeconds = Math.Clamp(ups.GridLostDelaySeconds, 0, AppSettings.MaxGridLostDelaySeconds);

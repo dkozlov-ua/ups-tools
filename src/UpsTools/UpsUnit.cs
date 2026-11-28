@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using UpsTools.Core;
+using UpsTools.Core.History;
 using UpsTools.Services;
 using UpsTools.ViewModels;
 
@@ -15,9 +16,12 @@ public sealed class UpsUnit : ObservableObject
     /// <param name="rulesChanged">Applies changed event limits to its monitor.</param>
     /// <param name="renamed">The user renamed it.</param>
     /// <param name="trayChanged">The user changed how the tray icon shows it.</param>
-    internal UpsUnit(UpsSettings settings, ElevatedTasks elevated, Action save, Action rulesChanged, Action renamed, Action trayChanged)
+    /// <param name="history">What it did lately, for the History tab; kept in memory only unless given.</param>
+    internal UpsUnit(UpsSettings settings, ElevatedTasks elevated, Action save, Action rulesChanged, Action renamed, Action trayChanged,
+        UpsHistory? history = null)
     {
         Settings = settings;
+        History = history ?? new UpsHistory(null);
         EventScripts = new ObservableCollection<EventScriptsViewModel>(Enum.GetValues<UpsEventKind>()
             .Select(kind => new EventScriptsViewModel(kind, settings.ScriptsFor(kind), elevated, save)));
         Configuration = new UpsConfigurationViewModel(settings, save, rulesChanged, renamed, trayChanged);
@@ -34,6 +38,9 @@ public sealed class UpsUnit : ObservableObject
     public string Title { get; internal set => Set(ref field, value); }
 
     public DashboardViewModel Dashboard { get; } = new();
+
+    /// <summary>A point a minute and its events, for the History tab (<see cref="UpsHistory"/>).</summary>
+    public UpsHistory History { get; }
     public ObservableCollection<EventScriptsViewModel> EventScripts { get; }
 
     /// <summary>Its own settings: name, event limits, notifications and the tray icon.</summary>

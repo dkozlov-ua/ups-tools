@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using UpsTools.Core;
+using UpsTools.Core.History;
 using UpsTools.Core.Sharing;
 using UpsTools.Services;
 using UpsTools.ViewModels;
@@ -30,10 +31,12 @@ public interface IEventNotifications
 /// </summary>
 public sealed class UpsUnit
 {
-    internal UpsUnit(UpsSettings settings)
+    /// <param name="history">What it did lately; kept in memory only unless given.</param>
+    internal UpsUnit(UpsSettings settings, UpsHistory? history = null)
     {
         Settings = settings;
         Title = settings.Label ?? settings.Device.Title;
+        History = history ?? new UpsHistory(null);
     }
 
     public UpsSettings Settings { get; }
@@ -43,6 +46,9 @@ public sealed class UpsUnit
     public string Title { get; internal set; }
 
     public DashboardViewModel Dashboard { get; } = new();
+
+    /// <summary>A point a minute and its events, for its History screen (<see cref="UpsHistory"/>).</summary>
+    public UpsHistory History { get; }
 
     /// <summary>How it is read: over Bluetooth, or through which device.</summary>
     public string Route { get; internal set; } = "via Bluetooth LE";
@@ -79,15 +85,18 @@ public sealed class MonitorController
     private SharingServer? _server;
     private volatile UpsCoordinator? _coordinator;
     private CancellationTokenSource? _watchdog;
+    private readonly WebhookSender _webhooks;
 
     /// <param name="ui">The UI thread: everything here runs on it.</param>
     /// <param name="log">The log; its folder holds the settings too.</param>
     /// <param name="drivers">The UPS drivers.</param>
     /// <param name="deviceName">What the other devices on the network call this one.</param>
     /// <param name="networks">The IPv4 addresses of the networks to share on; null: every one that carries multicast.</param>
+    /// <param name="webhooks">Calls the webhooks; over the network unless a test says otherwise.</param>
     public MonitorController(IUiThread ui, AppLog log, IReadOnlyList<IUpsDriver> drivers, string deviceName,
-        Func<IReadOnlyList<IPAddress>>? networks = null, IEventNotifications? notifications = null)
+        Func<IReadOnlyList<IPAddress>>? networks = null, IEventNotifications? notifications = null, WebhookSender? webhooks = null)
     {
+        _webhooks = webhooks ?? new WebhookSender();
         _ui = ui;
         Log = log;
         _store = new SettingsStore(log, log.Folder);
@@ -105,14 +114,20 @@ public sealed class MonitorController
             ActivityAdded?.Invoke(entry);
         });
 
-        foreach (var ups in Settings.Upses) Upses.Add(new UpsUnit(ups));
+        foreach (var ups in Settings.Upses) Upses.Add(NewUnit(ups));
         RefreshTitles();
     }
+
+    private UpsUnit NewUnit(UpsSettings settings) =>
+        new(settings, new UpsHistory(Path.Combine(Log.Folder, "history", settings.Id + ".txt")));
 
     public AppLog Log { get; }
     public AppSettings Settings { get; }
     public IReadOnlyList<IUpsDriver> Drivers => _drivers.All;
     public IEventNotifications? Notifications { get; set; }
+
+    /// <summary>Tells the apps on the phone of each event (Tasker…); none unless set.</summary>
+    public IEventBroadcast? Broadcast { get; set; }
 
     /// <summary>What the other devices on the network call this one.</summary>
     public string DeviceName { get; }
@@ -238,7 +253,7 @@ public sealed class MonitorController
         {
             var settings = new UpsSettings { Device = device, Label = string.IsNullOrWhiteSpace(label) || label == device.Title ? null : label };
             Settings.Upses.Add(settings);
-            unit = new UpsUnit(settings);
+            unit = NewUnit(settings);
             Upses.Add(unit);
             Log.Info($"Paired with {device.Name} ({device.Address})");
         }
@@ -274,6 +289,7 @@ public sealed class MonitorController
         await StopMonitoringAsync(unit);
         Settings.Upses.Remove(unit.Settings);
         Upses.Remove(unit);
+        unit.History.Delete();
         Save();
         Log.Info($"Forgot {unit.Device.Name}");
         RefreshTitles();
@@ -326,6 +342,7 @@ public sealed class MonitorController
         monitor.StatusUpdated += status => _ui.Post(() =>
         {
             if (unit.Monitor != monitor) return;
+            unit.History.Record(status);
             unit.Dashboard.SetDevice(unit.Device, status.Serial, unit.Title);
             unit.Dashboard.Apply(status);
             Changed?.Invoke();
@@ -359,6 +376,7 @@ public sealed class MonitorController
         var monitor = unit.Monitor;
         unit.Monitor = null;
         unit.GridLostAt = null;
+        unit.History.Flush();
         unit.Dashboard.SetBatteryLow(false);
         if (monitor is null) return;
         _coordinator?.Leave(unit.Device);
@@ -372,6 +390,7 @@ public sealed class MonitorController
     internal void OnUpsEvent(UpsUnit unit, UpsEventKind kind, UpsStatus? status, DateTimeOffset? gridGoneSince = null)
     {
         Log.Event(unit.LogPrefix + kind.Title());
+        unit.History.Record(kind, kind == UpsEventKind.GridLost ? gridGoneSince ?? status?.Timestamp : status?.Timestamp);
 
         TimeSpan? outage = null;
         var at = status?.Timestamp ?? DateTimeOffset.Now;
@@ -393,9 +412,42 @@ public sealed class MonitorController
         }
 
         // "UPS unreachable" comes without a reading; the last good one says when the UPS last answered.
-        if (unit.Settings.NotifyOn(kind))
-            Notifications?.Show(UpsNotice.For(kind, status ?? unit.Monitor?.LastStatus, outage,
-                unreachable: kind == UpsEventKind.BatteryLow && status is null), unit.Title, unit.Source);
+        var notice = UpsNotice.For(kind, status ?? unit.Monitor?.LastStatus, outage,
+            unreachable: kind == UpsEventKind.BatteryLow && status is null);
+        if (unit.Settings.NotifyOn(kind)) Notifications?.Show(notice, unit.Title, unit.Source);
+
+        var message = Message(unit, kind, notice, status ?? unit.Monitor?.LastStatus, outage ?? (unit.GridLostAt is { } since ? at - since : null));
+        try { Broadcast?.Send(message); }
+        catch (Exception ex) { Log.Warn($"{unit.LogPrefix}Could not tell the other apps of {kind.Title()}: {ex.Message}"); }
+        foreach (var hook in unit.Settings.Webhooks.Where(h => h.Enabled && h.Events.Contains(kind) && WebhookSettings.IsValidUrl(h.Url)))
+            _ = CallAsync(unit, hook, message);
+    }
+
+    /// <summary>The event as other apps and the webhooks are told of it.</summary>
+    private EventMessage Message(UpsUnit unit, UpsEventKind kind, UpsNotice notice, UpsStatus? status, TimeSpan? outage, bool test = false) =>
+        new(kind, notice, ScriptEnvironment.For(kind, status,
+            reachable: unit.Monitor is null ? null : unit.Monitor.LinkState != UpsLinkState.Unreachable && kind != UpsEventKind.UpsUnreachable,
+            outage, manual: test, unit.Title), DeviceName, test);
+
+    private async Task CallAsync(UpsUnit unit, WebhookSettings hook, EventMessage message)
+    {
+        var failure = await _webhooks.SendAsync(hook, message);
+        var what = $"{unit.LogPrefix}Webhook {WebhookSender.HostOf(hook)} ({message.Kind.Title()})";
+        if (failure is null) Log.Info($"{what}: sent");
+        else Log.Warn($"{what} failed: {failure}");
+    }
+
+    /// <summary>
+    /// Send test: the webhook gets a "Grid lost" (marked as a test) with the UPS's latest reading.
+    /// </summary>
+    /// <returns>Null when it took it, or why not.</returns>
+    public async Task<string?> TestWebhookAsync(UpsUnit unit, WebhookSettings hook)
+    {
+        var status = unit.Monitor?.LastStatus;
+        var message = Message(unit, UpsEventKind.GridLost, UpsNotice.For(UpsEventKind.GridLost, status), status, null, test: true);
+        var failure = await _webhooks.SendAsync(hook, message);
+        Log.Info($"{unit.LogPrefix}Webhook {WebhookSender.HostOf(hook)} (test): {failure ?? "sent"}");
+        return failure;
     }
 
     public void SendTestNotification()
@@ -415,7 +467,7 @@ public sealed class MonitorController
     };
 
     /// <summary>The colour <paramref name="unit"/> gives the status notification: its state, unless its settings keep that off.</summary>
-    private static TrayState StateOf(UpsUnit unit) => unit.Dashboard.TrayStateWith(
+    public static TrayState StateOf(UpsUnit unit) => unit.Dashboard.TrayStateWith(
         onBattery: unit.Settings.StatusOn(UpsEventKind.GridLost), batteryLow: unit.Settings.StatusOn(UpsEventKind.BatteryLow),
         unreachable: unit.Settings.StatusOn(UpsEventKind.UpsUnreachable));
 

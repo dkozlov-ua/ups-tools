@@ -31,8 +31,19 @@ public sealed class UpsToolsApp(IntPtr handle, JniHandleOwnership ownership) : A
         var log = new AppLog(folder);
         Notifier = new Notifier(this);
         var ble = new AndroidBle(this);
-        Controller = new MonitorController(new MainThread(), log, new UpsDrivers(log.Info, ble).All, DeviceName(),
-            Networks, Notifier);
+        IReadOnlyList<IUpsDriver> drivers = new UpsDrivers(log.Info, ble).All;
+#if DEBUG
+        // Debug builds only (the emulator has no Bluetooth): files/simulator.json, written with
+        // 'adb shell run-as com.dkozlov.upstools', makes the simulated UPS the only one (see SimulatedUpsDriver).
+        var simulator = Path.Combine(folder, "simulator.json");
+        if (File.Exists(simulator))
+        {
+            drivers = [new SimulatedUpsDriver(simulator)];
+            log.Info("Debug build: using the simulated UPS of simulator.json");
+        }
+#endif
+        Controller = new MonitorController(new MainThread(), log, drivers, DeviceName(),
+            Networks, Notifier) { Broadcast = new EventBroadcast(this) };
         log.Info($"UPS Tools {AppVersion.Of(this)} started on Android {Build.VERSION.Release}");
     }
 

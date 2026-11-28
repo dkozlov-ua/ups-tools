@@ -197,7 +197,7 @@ public sealed class MainActivity : ScreenActivity
         if (d.LastUpdated.Length > 0) card.AddView(Ui.Text(this, d.LastUpdated, 12, secondary: true));
 
         card.Clickable = true;
-        card.Click += (_, _) => StartActivity(new Intent(this, typeof(UpsSettingsActivity)).PutExtra(UpsSettingsActivity.ExtraId, unit.Settings.Id));
+        card.Click += (_, _) => StartActivity(new Intent(this, typeof(HistoryActivity)).PutExtra(HistoryActivity.ExtraId, unit.Settings.Id));
         return card;
     }
 

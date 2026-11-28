@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The UPS battery widget (Platform/UpsWidget.cs): one UPS's name and state, its charge as a bar, and the load with
+  the time left or charging. The four bars are the state's colours: one shows (widgets can't recolour a bar before
+  Android 12).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ups_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp"
+    android:background="@drawable/widget_background">
+  <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+    <TextView
+        android:id="@+id/ups_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="UPS"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#FFECEFF1"
+        android:maxLines="1"
+        android:ellipsize="end" />
+    <TextView
+        android:id="@+id/ups_state"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="Grid online"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#FF22C55E"
+        android:maxLines="1" />
+  </LinearLayout>
+  <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="6dp"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+    <FrameLayout
+        android:layout_width="0dp"
+        android:layout_height="14dp"
+        android:layout_weight="1">
+      <ProgressBar
+          android:id="@+id/ups_bar_good"
+          style="@android:style/Widget.ProgressBar.Horizontal"
+          android:layout_width="match_parent"
+          android:layout_height="14dp"
+          android:max="100"
+          android:progress="80"
+          android:progressDrawable="@drawable/widget_bar_good"
+          android:visibility="visible" />
+      <ProgressBar
+          android:id="@+id/ups_bar_warning"
+          style="@android:style/Widget.ProgressBar.Horizontal"
+          android:layout_width="match_parent"
+          android:layout_height="14dp"
+          android:max="100"
+          android:progress="80"
+          android:progressDrawable="@drawable/widget_bar_warning"
+          android:visibility="gone" />
+      <ProgressBar
+          android:id="@+id/ups_bar_bad"
+          style="@android:style/Widget.ProgressBar.Horizontal"
+          android:layout_width="match_parent"
+          android:layout_height="14dp"
+          android:max="100"
+          android:progress="80"
+          android:progressDrawable="@drawable/widget_bar_bad"
+          android:visibility="gone" />
+      <ProgressBar
+          android:id="@+id/ups_bar_neutral"
+          style="@android:style/Widget.ProgressBar.Horizontal"
+          android:layout_width="match_parent"
+          android:layout_height="14dp"
+          android:max="100"
+          android:progress="80"
+          android:progressDrawable="@drawable/widget_bar_neutral"
+          android:visibility="gone" />
+    </FrameLayout>
+    <TextView
+        android:id="@+id/ups_percent"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:minWidth="56dp"
+        android:gravity="end"
+        android:text="80 %"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFFFF" />
+  </LinearLayout>
+  <TextView
+      android:id="@+id/ups_detail"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="4dp"
+      android:text="120 W load"
+      android:textSize="15sp"
+      android:textColor="#FFCFD8DC"
+      android:maxLines="1"
+      android:ellipsize="end" />
+</LinearLayout>

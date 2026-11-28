@@ -11,6 +11,9 @@
             <TabItem Header="Dashboard">
                 <views:DashboardView />
             </TabItem>
+            <TabItem Header="History">
+                <views:HistoryView />
+            </TabItem>
             <TabItem Header="Scripts">
                 <views:ScriptsView />
             </TabItem>

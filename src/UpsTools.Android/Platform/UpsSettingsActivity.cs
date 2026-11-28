@@ -1,4 +1,5 @@
 using Android.App;
+using Android.Content;
 using Android.Content.PM;
 using Android.OS;
 using Android.Widget;
@@ -15,6 +16,7 @@ public sealed class UpsSettingsActivity : ScreenActivity
     public const string ExtraId = "ups";
 
     private UpsUnit? _unit;
+    private LinearLayout? _webhooks;
 
     protected override string ScreenTitle => _unit?.Title ?? "UPS";
 
@@ -26,6 +28,33 @@ public sealed class UpsSettingsActivity : ScreenActivity
     }
 
     protected override bool RebuildOnResume => false;
+
+    // The list of webhooks follows what WebhookActivity changed, without rebuilding the fields above it.
+    protected override void OnResume()
+    {
+        base.OnResume();
+        ShowWebhooks();
+    }
+
+    private void ShowWebhooks()
+    {
+        if (_webhooks is null || _unit is not { } unit) return;
+        _webhooks.RemoveAllViews();
+        if (unit.Settings.Webhooks.Count == 0) _webhooks.AddView(Ui.Text(this, "None.", 14, secondary: true));
+        foreach (var hook in unit.Settings.Webhooks)
+        {
+            var row = Ui.Column(this, 2);
+            row.SetPadding(0, Ui.Dp(this, 6), 0, Ui.Dp(this, 6));
+            row.AddView(Ui.Text(this, WebhookSender.HostOf(hook) + (hook.Enabled ? "" : " (off)"), 15, bold: true));
+            var events = hook.Events.Count == Enum.GetValues<UpsEventKind>().Length ? "every event"
+                : hook.Events.Count == 0 ? "no event" : string.Join(", ", hook.Events.Order().Select(k => k.Title()));
+            row.AddView(Ui.Text(this, $"{(hook.Format == WebhookFormat.Json ? "JSON" : "Text")} on {events}", 12, secondary: true));
+            row.Clickable = true;
+            row.Click += (_, _) => StartActivity(new Intent(this, typeof(WebhookActivity))
+                .PutExtra(WebhookActivity.ExtraUps, unit.Settings.Id).PutExtra(WebhookActivity.ExtraHook, hook.Id));
+            _webhooks.AddView(row, Ui.Match());
+        }
+    }
 
     protected override void Build(LinearLayout content)
     {
@@ -110,6 +139,19 @@ public sealed class UpsSettingsActivity : ScreenActivity
                 MonitorService.SettingsChanged();
             }));
         content.AddView(status, Ui.Match());
+
+        content.AddView(Ui.Heading(this, "Webhooks"));
+        var hooks = Ui.Card(this, 4);
+        hooks.AddView(Ui.Text(this,
+            "URLs this phone calls on this UPS's events: Home Assistant, ntfy, a NAS, anything that takes a POST. " +
+            "Every event is also broadcast to the apps on the phone as com.dkozlov.upstools.EVENT, with the same fields as extras, for Tasker or MacroDroid.",
+            13, secondary: true));
+        _webhooks = Ui.Column(this, 0);
+        hooks.AddView(_webhooks, Ui.Match());
+        hooks.AddView(Ui.Button(this, "Add webhook…", () => StartActivity(new Intent(this, typeof(WebhookActivity))
+            .PutExtra(WebhookActivity.ExtraUps, unit.Settings.Id))));
+        content.AddView(hooks, Ui.Match());
+        ShowWebhooks();
 
         var forget = Ui.Button(this, "Forget this UPS", () =>
             new AlertDialog.Builder(this)

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="widget_description">Your UPSes at a glance: the grid, the charge and the load.</string>
+  <string name="widget_ups_description">One UPS: its charge as a bar, the grid, the load and the time left.</string>
+</resources>

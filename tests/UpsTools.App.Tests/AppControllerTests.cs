@@ -91,6 +91,30 @@ public sealed class AppControllerTests : IDisposable
         return UiUntil(() => _notes.All.Count > 0 || _log.Recent.Any(e => e.Message == "Grid lost"), "Grid lost");
     }
 
+    // ---- history
+
+    [Fact]
+    public async Task Readings_and_events_go_into_the_history_kept_next_to_the_settings_until_forgotten()
+    {
+        var controller = await Start();
+        var start = DateTimeOffset.Now;
+        await Online(80, start);
+        await GridLost(79, start.AddMinutes(1));
+
+        var unit = controller.Upses[0];
+        var history = unit.History;
+        await UiUntil(() => history.Points(start.AddMinutes(-1)).Count == 2, "two minutes of points");
+        Assert.Equal([true, false], history.Points(start.AddMinutes(-1)).Select(p => p.Grid ?? true));
+        Assert.Equal(UpsEventKind.GridLost, Assert.Single(history.Events(start.AddMinutes(-1))).Kind);
+
+        await UiThread.Run(controller.StopMonitoringAsync); // writes the minute being recorded
+        var file = Path.Combine(_folder.Path, "history", UpsId + ".txt");
+        Assert.Equal(2, new Core.History.UpsHistory(file).Points(start.AddMinutes(-1)).Count);
+
+        await UiThread.Run(() => controller.ForgetAsync(unit));
+        Assert.False(File.Exists(file));
+    }
+
     // ---- not paired
 
     [Fact]
