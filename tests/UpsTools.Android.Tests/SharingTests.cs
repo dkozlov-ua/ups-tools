@@ -120,6 +120,26 @@ public sealed class SharingTests : IDisposable
     }
 
     [Fact]
+    public async Task When_the_connected_one_is_unplugged_one_on_mains_power_takes_over()
+    {
+        var (holder, watcher) = await TwoPhones();
+        holder.Ups.Answer(true, 80);
+        await Until(() => watcher.Unit.Dashboard.BatteryValue == "80 %", "the reading on the other phone");
+
+        await _ui.Run(() =>
+        {
+            holder.Controller.SetPowerSource(PowerSource.Battery);
+            return true;
+        });
+        await Until(() => watcher.Unit.Route == "via Bluetooth LE" && holder.Unit.Route == $"through {watcher.Name}",
+            "the phone on mains power to take over");
+        await Until(() => watcher.Controller.Neighbours.Contains($"{holder.Name} (on battery): not connected to a UPS"),
+            "the other phone to say it is on battery");
+        watcher.Ups.Answer(true, 77);
+        await Until(() => holder.Unit.Dashboard.BatteryValue == "77 %", "the reading through the phone on mains power");
+    }
+
+    [Fact]
     public async Task The_ups_another_one_is_connected_to_can_be_paired_and_a_code_is_checked()
     {
         var (holder, _) = await TwoPhones();

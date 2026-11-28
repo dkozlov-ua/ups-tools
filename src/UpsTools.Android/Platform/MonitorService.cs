@@ -3,6 +3,7 @@ using Android.Content;
 using Android.Content.PM;
 using Android.Net.Wifi;
 using Android.OS;
+using UpsTools.Core.Sharing;
 
 namespace UpsTools.Droid.Platform;
 
@@ -10,7 +11,8 @@ namespace UpsTools.Droid.Platform;
 /// Keeps the monitors running while the app isn't on screen: a foreground service (Android's equivalent of the tray
 /// icon), with the status notification, a wake lock so that polls go on with the screen off
 /// (<see cref="Services.AppSettings.KeepAwake"/>), and, while sharing, a multicast lock so that the phone hears the
-/// other devices' announcements over Wi-Fi.
+/// other devices' announcements over Wi-Fi. It also tells the controller when the phone is plugged in or unplugged,
+/// so that a device on mains power takes the UPSes over from it while it runs on its battery.
 /// </summary>
 [Service(Exported = false, ForegroundServiceType = ForegroundService.TypeConnectedDevice)]
 public sealed class MonitorService : Service
@@ -23,6 +25,7 @@ public sealed class MonitorService : Service
     private PowerManager.WakeLock? _wakeLock;
     private WifiManager.MulticastLock? _multicastLock;
     private Handler? _handler;
+    private PowerReceiver? _powerReceiver;
     private bool _statusQueued;
 
     /// <summary>Whether it runs: the activities show "Monitoring is off" otherwise.</summary>
@@ -63,6 +66,10 @@ public sealed class MonitorService : Service
             controller.Changed += QueueStatus;
             controller.SharingChanged += ApplyLocks;
             Running = true;
+            _powerReceiver = new PowerReceiver(controller);
+            // A sticky broadcast: what the phone runs on now comes back at once, and each change after.
+            if (RegisterReceiver(_powerReceiver, new IntentFilter(Intent.ActionBatteryChanged)) is { } battery)
+                controller.SetPowerSource(PowerReceiver.SourceOf(battery));
             controller.Start();
             ApplyLocks();
         }
@@ -146,11 +153,26 @@ public sealed class MonitorService : Service
             controller.SharingChanged -= ApplyLocks;
             _ = controller.StopAsync();
         }
+        if (_powerReceiver is not null) UnregisterReceiver(_powerReceiver);
+        _powerReceiver = null;
         _controller = null;
         _wakeLock?.Release();
         _wakeLock = null;
         _multicastLock?.Release();
         _multicastLock = null;
         base.OnDestroy();
+    }
+}
+
+/// <summary>Hears the battery's broadcasts (on the main thread) and tells the controller whether the phone is plugged in.</summary>
+internal sealed class PowerReceiver(MonitorController controller) : BroadcastReceiver
+{
+    /// <summary>Plugged in (to a charger, a PC's USB port or a wireless pad): mains power; otherwise its battery.</summary>
+    public static PowerSource SourceOf(Intent battery) =>
+        battery.GetIntExtra(BatteryManager.ExtraPlugged, 0) != 0 ? PowerSource.Mains : PowerSource.Battery;
+
+    public override void OnReceive(Context? context, Intent? intent)
+    {
+        if (intent?.Action == Intent.ActionBatteryChanged) controller.SetPowerSource(SourceOf(intent));
     }
 }

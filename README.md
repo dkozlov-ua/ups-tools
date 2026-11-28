@@ -127,6 +127,15 @@ the same **sharing code** (the first PC makes one up: copy it, and paste it on t
   included), shuts down or turns sharing off, it tells the others, and one of them connects at once; if it disappears without a word (e.g. it
   lost its network), the others take over after about 17 s. A PC that is connected but has had the UPS unreachable for
   2 minutes (e.g. out of Bluetooth range) lets another one try.
+- **Mains power first**: a laptop or a phone on its own battery leaves the UPS to a PC (or phone) on mains power, which
+  the link costs nothing that matters. When they start together, the one on mains power connects; when a laptop
+  connected to the UPS is unplugged, or a PC on mains power joins, the one on mains power takes over within seconds
+  (without the readings failing, so no *UPS unreachable*). Being plugged in only counts after a minute, so a quick
+  charge takes nothing over; a desktop, or a laptop powered by the UPS during an outage, counts as on mains power. Two
+  on mains power, or two on battery, don't take the UPS from each other. One on mains power that couldn't reach the
+  UPS once it had taken over (e.g. out of Bluetooth range) doesn't take it over again for an hour. The card lists the
+  PCs on battery as such. With a PC running a version before 0.12.0 among those that have the UPS paired, the fixed
+  order alone decides, as before.
 - **Add UPS…** lists the UPSes the other PCs are connected to: pairing one takes its name from that PC and doesn't
   connect to it.
 
@@ -167,7 +176,9 @@ Galaxy S22 (Android 16).
   reconnects from scratch.
 - **Network sharing** works between phones and PCs alike: the same code, the same Wi-Fi network (the phone hears the
   announcements while it shares). The phone can be the one connected to a UPS, serving the PCs, or read it through a
-  PC. The others call it by its name in Android's settings (*About phone → Device name*), or its model.
+  PC. The others call it by its name in Android's settings (*About phone → Device name*), or its model. Unplugged, it
+  leaves the UPS to a device on mains power (see [Network sharing](#network-sharing)); plugged in (a charger, a PC's
+  USB port, a wireless pad), it takes the UPS over from one on battery.
 - **Notifications** come in three channels that Android's settings show: *Power problems* (Grid lost, Battery low,
   UPS unreachable: they pop up and sound), *Power back* (Grid restored, UPS reachable again) and *Monitoring status*.
 - **History**: tapping a UPS on the dashboard opens its chart (6 h / 24 h / 7 d, as on Windows; touch it to read a

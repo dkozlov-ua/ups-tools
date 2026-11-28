@@ -134,6 +134,25 @@ public sealed class SharingControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task When_the_connected_copy_runs_on_battery_the_other_takes_over()
+    {
+        var (holder, watcher) = await TwoCopies();
+        holder.Ups.Answer(true, 80);
+        await Until(() => watcher.Unit.Dashboard.BatteryValue == "80 %", "the reading on the other copy");
+
+        await UiThread.Run(() => holder.Controller.SetPowerSource(PowerSource.Battery)); // the laptop was unplugged
+        await Until(() => watcher.Route == "via Bluetooth LE" && holder.Route == $"through {Environment.MachineName}",
+            "the copy on mains power to take over");
+        Assert.Contains(holder.Log.Recent, e => e.Message ==
+            $"{Environment.MachineName} is on mains power: leaving Desk to that PC, to save this one's battery");
+        await Until(() => watcher.Controller.Sharing.Neighbours.Contains($"{Environment.MachineName} (on battery): not connected to a UPS"),
+            "the other copy to say it is on battery");
+
+        watcher.Ups.Answer(true, 77);
+        await Until(() => holder.Unit.Dashboard.BatteryValue == "77 %", "the reading through the copy on mains power");
+    }
+
+    [Fact]
     public async Task The_upses_other_copies_are_connected_to_can_be_paired()
     {
         var (holder, _) = await TwoCopies();

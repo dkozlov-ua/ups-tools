@@ -93,11 +93,13 @@ public sealed class SharingViewModel : ObservableObject
         Neighbours.Clear();
         foreach (var pc in neighbours)
             Neighbours.Add(!pc.SameCode ? $"{pc.Pc}: shares with another code"
-                : pc.Holding.Count == 0 ? $"{pc.Pc}: not connected to a UPS"
-                : $"{pc.Pc}: connected to {string.Join(", ", pc.Holding)}");
+                : pc.Holding.Count == 0 ? $"{pc.Pc}{OnBattery(pc)}: not connected to a UPS"
+                : $"{pc.Pc}{OnBattery(pc)}: connected to {string.Join(", ", pc.Holding)}");
         OnPropertyChanged(nameof(HasNeighbours));
         if (!HasProblem) Status = StatusText();
     }
+
+    private static string OnBattery(NeighbourPc pc) => pc.OnBattery ? " (on battery)" : "";
 
     private string StatusText() =>
         !_sharing ? ""

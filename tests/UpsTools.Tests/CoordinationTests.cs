@@ -19,7 +19,11 @@ public sealed class CoordinationTests : IDisposable
         Expiry: TimeSpan.FromMilliseconds(500),
         Claim: TimeSpan.FromMilliseconds(150),
         Release: TimeSpan.FromMilliseconds(400),
-        Rest: TimeSpan.FromSeconds(30));
+        Rest: TimeSpan.FromSeconds(30))
+    {
+        Settle = TimeSpan.FromMilliseconds(800),
+        Retry = TimeSpan.FromSeconds(30),
+    };
 
     /// <summary>Delivers each datagram to every other node that is connected, a moment later.</summary>
     private sealed class Network
@@ -70,12 +74,14 @@ public sealed class CoordinationTests : IDisposable
         foreach (var coordinator in _coordinators) coordinator.Dispose();
     }
 
-    private Pc Start(string instance, string? code = null, IDiscoveryTransport? transport = null, int port = 47870)
+    private Pc Start(string instance, string? code = null, IDiscoveryTransport? transport = null, int port = 47870,
+        PowerSource power = PowerSource.Mains)
     {
         var node = _network.Join();
         var log = new ConcurrentQueue<string>();
         var coordinator = new UpsCoordinator(instance, "PC-" + instance.ToUpperInvariant(), code ?? Code, port, transport ?? node, log.Enqueue, Fast);
         _coordinators.Add(coordinator);
+        coordinator.SetPower(power);
         coordinator.Start();
         return new Pc(coordinator, node, log);
     }
@@ -97,7 +103,8 @@ public sealed class CoordinationTests : IDisposable
     {
         var now = DateTimeOffset.Now;
         var sent = new Announcement("abc", "DESKTOP-1", 47870,
-            [new AnnouncedUps("bluetti-ble/0C", "Desk", Ups with { UserId = null }, UpsRole.Holding, Online: true)], Probe: true);
+            [new AnnouncedUps("bluetti-ble/0C", "Desk", Ups with { UserId = null }, UpsRole.Holding, Online: true, Unreached: true)],
+            Probe: true, Power: PowerSource.Battery);
         var datagram = sent.Seal(SharingCode.DiscoveryKey(Code), SharingCode.Fingerprint(Code), now);
 
         var opened = Announcement.Open(datagram, SharingCode.DiscoveryKey(Code), SharingCode.Fingerprint(Code), now, out var foreign);
@@ -105,6 +112,7 @@ public sealed class CoordinationTests : IDisposable
         Assert.Equal(sent.Instance, opened!.Instance);
         Assert.Equal(sent.Upses, opened.Upses);
         Assert.True(opened.Probe);
+        Assert.Equal(PowerSource.Battery, opened.Power);
 
         // Another code: who sent it, nothing more.
         var other = SharingCode.New();
@@ -281,6 +289,130 @@ public sealed class CoordinationTests : IDisposable
         Assert.Equal(("Desk", "PC-A", 47870), (shared.Ups.Title, shared.Pc.Pc, shared.Pc.Port));
         Assert.Null(shared.Ups.Device.UserId); // the account stays on its PC
         Assert.Empty(stranger.Coordinator.NetworkUpses);
+    }
+
+    // ---- mains power before battery
+
+    [Fact]
+    public async Task A_pc_on_mains_power_takes_over_from_one_on_battery()
+    {
+        var a = Start("a", power: PowerSource.Battery);
+        a.Coordinator.Join(Ups, "Desk");
+        await Until(() => a.Route == UpsRoute.Direct, "a to connect");
+
+        var b = Start("b"); // later in order, but on mains power
+        b.Coordinator.Join(Ups, "Desk");
+        await Until(() => b.Route == UpsRoute.Direct && IsThrough(a, "PC-B"), "b to take over and a to read through it");
+        Assert.Contains("PC-B is on mains power: leaving Desk to that PC, to save this one's battery", a.Log);
+        await Task.Delay(400);
+        Assert.Equal(UpsRoute.Direct, b.Route);
+        Assert.Single(a.Coordinator.Neighbours, n => n.Pc == "PC-B" && !n.OnBattery);
+        Assert.Single(b.Coordinator.Neighbours, n => n.Pc == "PC-A" && n.OnBattery);
+    }
+
+    [Fact]
+    public async Task Of_two_starting_together_the_one_on_mains_power_connects()
+    {
+        var a = Start("a", power: PowerSource.Battery);
+        var b = Start("b");
+        a.Coordinator.Join(Ups, "Desk");
+        b.Coordinator.Join(Ups, "Desk");
+
+        var routes = new ConcurrentQueue<UpsRoute>();
+        a.Coordinator.RouteChanged += (_, route) => routes.Enqueue(route);
+        await Until(() => b.Route == UpsRoute.Direct && IsThrough(a, "PC-B"), "b to connect and a to read through it");
+        Assert.DoesNotContain(UpsRoute.Direct, routes);
+    }
+
+    [Fact]
+    public async Task Two_on_battery_do_not_take_it_from_each_other()
+    {
+        var b = Start("b", power: PowerSource.Battery);
+        b.Coordinator.Join(Ups, "Desk");
+        await Until(() => b.Route == UpsRoute.Direct, "b to connect");
+
+        var a = Start("a", power: PowerSource.Battery); // first in order
+        a.Coordinator.Join(Ups, "Desk");
+        await Until(() => IsThrough(a, "PC-B"), "a to read through b");
+        await Task.Delay(400);
+        Assert.Equal(UpsRoute.Direct, b.Route);
+    }
+
+    [Fact]
+    public async Task Plugged_in_for_a_moment_takes_nothing_over_and_for_longer_it_does()
+    {
+        var a = Start("a", power: PowerSource.Battery);
+        var b = Start("b", power: PowerSource.Battery);
+        a.Coordinator.Join(Ups, "Desk");
+        b.Coordinator.Join(Ups, "Desk");
+        await Until(() => a.Route == UpsRoute.Direct && IsThrough(b, "PC-A"), "a to connect");
+
+        b.Coordinator.SetPower(PowerSource.Mains);
+        await Task.Delay(100); // well short of the settle time
+        b.Coordinator.SetPower(PowerSource.Battery);
+        await Task.Delay(500);
+        Assert.Equal(UpsRoute.Direct, a.Route);
+
+        b.Coordinator.SetPower(PowerSource.Mains);
+        await Until(() => b.Route == UpsRoute.Direct && IsThrough(a, "PC-B"), "b to take over");
+        Assert.Contains("On mains power now: taking over any UPS a PC sharing on battery is connected to", b.Log);
+
+        // Unplugged again: the link stays where it is, as nobody else is on mains power.
+        b.Coordinator.SetPower(PowerSource.Battery);
+        await Task.Delay(400);
+        Assert.Equal(UpsRoute.Direct, b.Route);
+    }
+
+    [Fact]
+    public async Task A_pc_on_mains_power_that_cannot_reach_the_ups_does_not_take_it_over_again()
+    {
+        var a = Start("a", power: PowerSource.Battery);
+        a.Coordinator.Join(Ups, "Desk");
+        await Until(() => a.Route == UpsRoute.Direct, "a to connect");
+        var b = Start("b");
+        b.Coordinator.Join(Ups, "Desk");
+        await Until(() => b.Route == UpsRoute.Direct, "b to take over");
+
+        b.Coordinator.ReportLink(Ups, online: false); // out of range from b
+        await Until(() => a.Route == UpsRoute.Direct && IsThrough(b, "PC-A"), "a to connect again");
+        await Task.Delay(500);
+        Assert.Equal(UpsRoute.Direct, a.Route);
+    }
+
+    [Fact]
+    public async Task With_a_pc_that_does_not_say_what_it_runs_on_the_order_alone_decides()
+    {
+        // "a" runs a version from before the PCs said: it wants the UPS, and claims it as the first in order.
+        var old = _network.Join();
+        var key = SharingCode.DiscoveryKey(Code);
+        var fingerprint = SharingCode.Fingerprint(Code);
+        var role = UpsRole.Wanting;
+        using var stop = new CancellationTokenSource();
+        var announcing = Task.Run(async () =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                old.Send(new Announcement("a", "PC-A", 47870,
+                    [new AnnouncedUps(SharingHub.KeyOf(Ups), "Desk", Ups with { UserId = null }, role, Online: role == UpsRole.Holding)])
+                    .Seal(key, fingerprint, DateTimeOffset.Now));
+                await Task.Delay(50);
+            }
+        });
+
+        var b = Start("b", power: PowerSource.Battery);
+        var c = Start("c"); // on mains power, but last in order
+        b.Coordinator.Join(Ups, "Desk");
+        c.Coordinator.Join(Ups, "Desk");
+        await Task.Delay(500);
+        Assert.Equal(UpsRoute.Waiting, b.Route);
+        Assert.Equal(UpsRoute.Waiting, c.Route);
+
+        role = UpsRole.Holding;
+        await Until(() => IsThrough(b, "PC-A") && IsThrough(c, "PC-A"), "b and c to read through a");
+        await Task.Delay(300);
+        Assert.True(IsThrough(c, "PC-A"));
+        await stop.CancelAsync();
+        await announcing;
     }
 
     private static bool IsThrough(Pc pc, string holder) => pc.Route is { Kind: UpsRouteKind.Through, Peer: { } peer } && peer.Pc == holder;

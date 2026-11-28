@@ -29,7 +29,8 @@ public sealed record UpsRoute(UpsRouteKind Kind, PeerPc? Peer = null)
 /// <summary>Another PC heard on the network, for the configuration page.</summary>
 /// <param name="SameCode">It has this PC's sharing code; otherwise neither can read the other's UPSes.</param>
 /// <param name="Holding">What it calls the UPSes it is connected to.</param>
-public sealed record NeighbourPc(string Pc, bool SameCode, IReadOnlyList<string> Holding);
+/// <param name="OnBattery">It runs on its own battery, so a PC on mains power takes its UPSes over.</param>
+public sealed record NeighbourPc(string Pc, bool SameCode, IReadOnlyList<string> Holding, bool OnBattery = false);
 
 /// <summary>A UPS another PC is connected to, for the pairing dialog.</summary>
 public sealed record NetworkUps(AnnouncedUps Ups, PeerPc Pc);
@@ -46,6 +47,12 @@ public sealed record NetworkUps(AnnouncedUps Ups, PeerPc Pc);
 /// Should two end up connected (e.g. two networks joined), the one with the higher ID lets go.</para>
 /// <para>A PC that is connected but has had the UPS unreachable for a while (e.g. out of Bluetooth range) lets go if
 /// another PC has it paired, and rests before wanting it again, so that another PC can try.</para>
+/// <para>A PC on mains power comes before one on battery (<see cref="SetPower"/>), which the link would drain: in the
+/// claim, when two are connected, and while connected, as a PC on battery lets go of the UPS once a PC on mains power
+/// reads it through it. Two PCs on mains power, or two on battery, don't take it from each other. A PC on mains power
+/// that couldn't reach the UPS when it was connected to it doesn't count as on mains power for that UPS for a while, so
+/// that it doesn't take it over again and again. All this only while every PC that has the UPS paired says what it
+/// runs on: with a version from before they did, the instance IDs alone decide, as that version does.</para>
 /// <para>A PC that stops (it exits, sleeps or turns sharing off) says goodbye, and the others take over at once; one
 /// that disappears without a word is forgotten after a few missed announcements.</para>
 /// </remarks>
@@ -59,6 +66,12 @@ public sealed class UpsCoordinator : IDisposable
             Claim: TimeSpan.FromSeconds(3),
             Release: TimeSpan.FromMinutes(2),
             Rest: TimeSpan.FromMinutes(5));
+
+        /// <summary>How long a PC must have been on mains power before it says so: a quick charge takes nothing over.</summary>
+        public TimeSpan Settle { get; init; } = TimeSpan.FromMinutes(1);
+
+        /// <summary>How long a PC that couldn't reach a UPS doesn't take it over from a PC on battery.</summary>
+        public TimeSpan Retry { get; init; } = TimeSpan.FromHours(1);
     }
 
     private sealed class Peer(PeerPc pc)
@@ -66,8 +79,12 @@ public sealed class UpsCoordinator : IDisposable
         public PeerPc Pc { get; set; } = pc;
         public DateTimeOffset LastSeen { get; set; }
         public IReadOnlyList<AnnouncedUps> Upses { get; set; } = [];
+        public PowerSource Power { get; set; }
 
         public UpsRole? RoleOf(string key) => Upses.FirstOrDefault(u => u.Key == key)?.Role;
+
+        /// <summary>On mains power, and not kept from the UPS: it comes before a PC on battery.</summary>
+        public bool OnMainsFor(string key) => Power == PowerSource.Mains && Upses.FirstOrDefault(u => u.Key == key)?.Unreached != true;
     }
 
     private sealed class Local(PairedUps device, string title)
@@ -80,6 +97,12 @@ public sealed class UpsCoordinator : IDisposable
         public bool Online { get; set; }
         public DateTimeOffset? UnreachableSince { get; set; }
         public UpsRoute Route { get; set; } = UpsRoute.Waiting;
+
+        /// <summary>When this PC let go of it, unreachable; cleared once it reaches it again.</summary>
+        public DateTimeOffset? UnreachedAt { get; set; }
+
+        /// <summary>The PC on mains power this one let go of it for, while that one takes it over.</summary>
+        public string? HandedTo { get; set; }
     }
 
     private readonly string _instance;
@@ -100,6 +123,8 @@ public sealed class UpsCoordinator : IDisposable
     private bool _announceSoon;
     private bool _probe = true;
     private bool _started;
+    private PowerSource _power = PowerSource.Mains;
+    private DateTimeOffset? _mainsSince;
 
     /// <param name="instance">This running copy (<see cref="SharingHub.Instance"/>).</param>
     /// <param name="pc">What the other PCs call this one.</param>
@@ -134,6 +159,42 @@ public sealed class UpsCoordinator : IDisposable
         _transport.Received += OnReceived;
         _transport.Start();
         _ = LoopAsync();
+    }
+
+    /// <summary>
+    /// What this PC runs on now (on mains power until told otherwise). Battery counts at once; mains power only once
+    /// it has lasted <see cref="Timings.Settle"/>, apart from before <see cref="Start"/>.
+    /// </summary>
+    public void SetPower(PowerSource power)
+    {
+        string? log = null;
+        lock (_lock)
+        {
+            if (power == PowerSource.Battery)
+            {
+                _mainsSince = null;
+                if (_power == PowerSource.Battery) return;
+                _power = PowerSource.Battery;
+                _announceSoon = true;
+                if (_started) log = "On battery now: a PC sharing on mains power takes over any UPS this one is connected to";
+            }
+            else if (_power != PowerSource.Battery)
+            {
+                _mainsSince = null;
+                return;
+            }
+            else if (!_started)
+            {
+                _power = PowerSource.Mains;
+            }
+            else
+            {
+                _mainsSince ??= _clock();
+                return;
+            }
+        }
+        if (log is not null) _log?.Invoke(log);
+        Evaluate();
     }
 
     // ---- this PC's UPSes
@@ -177,6 +238,11 @@ public sealed class UpsCoordinator : IDisposable
         lock (_lock)
         {
             if (!_locals.TryGetValue(SharingHub.KeyOf(device), out var local) || local.Role != UpsRole.Holding) return;
+            if (online && local.UnreachedAt is not null)
+            {
+                local.UnreachedAt = null;
+                _announceSoon = true;
+            }
             if (online) local.UnreachableSince = null;
             else local.UnreachableSince ??= _clock();
             if (local.Online == online) return;
@@ -199,7 +265,7 @@ public sealed class UpsCoordinator : IDisposable
         {
             lock (_lock)
                 return [.. _peers.Values.Select(p => new NeighbourPc(p.Pc.Pc, true,
-                        [.. p.Upses.Where(u => u.Role == UpsRole.Holding).Select(u => u.Title)]))
+                        [.. p.Upses.Where(u => u.Role == UpsRole.Holding).Select(u => u.Title)], p.Power == PowerSource.Battery))
                     .Concat(_foreign.Values.Select(f => new NeighbourPc(f.Pc, false, [])))
                     .OrderBy(n => n.Pc, StringComparer.OrdinalIgnoreCase)];
         }
@@ -244,8 +310,8 @@ public sealed class UpsCoordinator : IDisposable
                         neighboursChanged = true;
                         found = $"Found {pc.Pc} sharing on the network";
                     }
-                    neighboursChanged |= !peer.Upses.SequenceEqual(announcement.Upses) || peer.Pc != pc;
-                    (peer.Pc, peer.LastSeen, peer.Upses) = (pc, now, announcement.Upses);
+                    neighboursChanged |= !peer.Upses.SequenceEqual(announcement.Upses) || peer.Pc != pc || peer.Power != announcement.Power;
+                    (peer.Pc, peer.LastSeen, peer.Upses, peer.Power) = (pc, now, announcement.Upses, announcement.Power);
                     if (announcement.Probe) _announceSoon = true; // it just started: tell it what this PC does
                 }
             }
@@ -298,6 +364,12 @@ public sealed class UpsCoordinator : IDisposable
                 neighboursChanged = true;
             }
 
+            if (_mainsSince is { } since && now - since >= _timings.Settle)
+            {
+                (_power, _mainsSince, _announceSoon) = (PowerSource.Mains, null, true);
+                logs.Add("On mains power now: taking over any UPS a PC sharing on battery is connected to");
+            }
+
             foreach (var local in _locals.Values)
             {
                 var route = Decide(local, now, logs);
@@ -323,13 +395,20 @@ public sealed class UpsCoordinator : IDisposable
     private UpsRoute Decide(Local local, DateTimeOffset now, List<string> logs)
     {
         var fresh = _peers.Values.ToList();
+
+        // Mains power first, then the instance IDs; the instance IDs alone while a PC that has it paired doesn't say
+        // what it runs on, so that every PC orders them alike.
+        var byPower = fresh.All(p => p.RoleOf(local.Key) is null || p.Power != PowerSource.Unknown);
+        var mainsHere = OnMains(local, now);
+        bool Ahead(Peer p) => byPower && p.OnMainsFor(local.Key) != mainsHere ? p.OnMainsFor(local.Key) : Before(p.Pc.Instance, _instance);
+
         var holders = fresh.Where(p => p.RoleOf(local.Key) == UpsRole.Holding)
-            .OrderBy(p => p.Pc.Instance, StringComparer.Ordinal).ToList();
+            .OrderBy(p => byPower && !p.OnMainsFor(local.Key)).ThenBy(p => p.Pc.Instance, StringComparer.Ordinal).ToList();
 
         switch (local.Role)
         {
             case UpsRole.Holding:
-                if (holders.FirstOrDefault(h => Before(h.Pc.Instance, _instance)) is { } other)
+                if (holders.FirstOrDefault(Ahead) is { } other)
                 {
                     logs.Add($"{other.Pc.Pc} is connected to {local.Title} too: leaving it to that PC");
                     SetRole(local, UpsRole.Watching, now);
@@ -339,6 +418,14 @@ public sealed class UpsCoordinator : IDisposable
                 {
                     logs.Add($"{local.Title} has been unreachable from this PC for a while: letting another PC try");
                     SetRole(local, UpsRole.Resting, now);
+                    local.UnreachedAt = now;
+                }
+                else if (byPower && !mainsHere
+                    && fresh.FirstOrDefault(p => p.RoleOf(local.Key) == UpsRole.Watching && p.OnMainsFor(local.Key)) is { } taker)
+                {
+                    logs.Add($"{taker.Pc.Pc} is on mains power: leaving {local.Title} to that PC, to save this one's battery");
+                    SetRole(local, UpsRole.Wanting, now);
+                    local.HandedTo = taker.Pc.Instance;
                 }
                 break;
 
@@ -361,9 +448,14 @@ public sealed class UpsCoordinator : IDisposable
                 SetRole(local, UpsRole.Wanting, now); // its PC let go of it, or went away
             }
 
+            // Just let go of it for a PC on mains power: that one connects, unless it doesn't in a while.
+            if (local.HandedTo is { } taker && (now - local.RoleSince >= _timings.Expiry
+                || !fresh.Any(p => p.Pc.Instance == taker && p.RoleOf(local.Key) is UpsRole.Watching or UpsRole.Wanting)))
+                local.HandedTo = null;
+
             // Nobody is connected: after hearing the others for a moment, the first of those that want it connects.
-            if (local.Role == UpsRole.Wanting && now - local.RoleSince >= _timings.Claim
-                && fresh.Where(p => p.RoleOf(local.Key) == UpsRole.Wanting).All(p => Before(_instance, p.Pc.Instance)))
+            if (local.Role == UpsRole.Wanting && local.HandedTo is null && now - local.RoleSince >= _timings.Claim
+                && !fresh.Any(p => p.RoleOf(local.Key) == UpsRole.Wanting && Ahead(p)))
             {
                 logs.Add(fresh.Count == 0
                     ? $"No other PC sharing on the network is connected to {local.Title}: connecting over Bluetooth"
@@ -385,19 +477,25 @@ public sealed class UpsCoordinator : IDisposable
         if (local.Role == role && local.RoleSince != default) return;
         local.Role = role;
         local.RoleSince = now;
+        local.HandedTo = null;
         if (role != UpsRole.Holding) (local.Online, local.UnreachableSince) = (false, null);
         _announceSoon = true;
     }
 
     private static bool Before(string a, string b) => string.CompareOrdinal(a, b) < 0;
 
+    /// <summary>This PC is on mains power, and not kept from the UPS for having failed to reach it.</summary>
+    private bool OnMains(Local local, DateTimeOffset now) => _power == PowerSource.Mains && !Unreached(local, now);
+
+    private bool Unreached(Local local, DateTimeOffset now) => local.UnreachedAt is { } at && now - at < _timings.Retry;
+
     private byte[] Announce(DateTimeOffset now, bool bye)
     {
         var upses = bye ? [] : _locals.Values.Select(l => new AnnouncedUps(l.Key, l.Title, l.Device with { UserId = null }, l.Role,
-            l.Role == UpsRole.Holding && l.Online)).ToList();
+            l.Role == UpsRole.Holding && l.Online, Unreached(l, now))).ToList();
         var probe = _probe;
         _probe = false;
-        return new Announcement(_instance, _pc, _port, upses, Probe: probe && !bye, Bye: bye).Seal(_key, _fingerprint, now);
+        return new Announcement(_instance, _pc, _port, upses, Probe: probe && !bye, Bye: bye, Power: _power).Seal(_key, _fingerprint, now);
     }
 
     /// <summary>Says goodbye (the other PCs take over the UPSes at once) and stops.</summary>

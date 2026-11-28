@@ -1,3 +1,4 @@
+using UpsTools.Core.Sharing;
 using UpsTools.Services;
 
 namespace UpsTools.AppTests;
@@ -74,6 +75,27 @@ public sealed class PowerWatcherTests
         watcher.OnCheck(Ms(5 + 3605));
         watcher.OnCheck(Ms(5 + 3605 + 600)); // a later freeze without a word still counts
         Assert.Equal(["suspending", "resumed", "thawed after 600 s"], _heard);
+    }
+
+    [Fact]
+    public void Being_plugged_in_or_unplugged_is_told_once_per_change()
+    {
+        var watcher = Watcher();
+        watcher.PowerSourceChanged += source => _heard.Add(source.ToString());
+        Assert.Equal(PowerSource.Mains, watcher.PowerSource);
+        watcher.OnPowerSource(PowerSource.Mains);
+        watcher.OnPowerSource(PowerSource.Battery);
+        watcher.OnPowerSource(PowerSource.Battery);
+        watcher.OnPowerSource(PowerSource.Mains);
+        Assert.Equal(["Battery", "Mains"], _heard);
+        Assert.Equal(PowerSource.Mains, watcher.PowerSource);
+    }
+
+    [Fact]
+    public void What_this_pc_runs_on_can_be_read()
+    {
+        Assert.True(Enum.IsDefined(PowerWatcher.ReadPowerSource()));
+        Assert.NotEqual(PowerSource.Unknown, PowerWatcher.ReadPowerSource());
     }
 
     [Fact]

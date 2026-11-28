@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using UpsTools.Core.Sharing;
 
 namespace UpsTools.Services;
 
@@ -8,7 +9,8 @@ namespace UpsTools.Services;
 /// where the screen goes off and Windows suspends desktop apps instead of the whole PC. Such a laptop tells only apps
 /// that asked for it (<c>PowerRegisterSuspendResumeNotification</c>): the plain broadcast that
 /// <see cref="SystemEvents.PowerModeChanged"/> listens to doesn't come. And in case Windows suspends the app without a
-/// word, a clock check notices that it was frozen for a while (<see cref="Thawed"/>).
+/// word, a clock check notices that it was frozen for a while (<see cref="Thawed"/>). The same check looks whether the
+/// PC runs on mains power or on its battery (<see cref="PowerSource"/>).
 /// </summary>
 /// <remarks>The events come on a background thread, apart from the <see cref="SystemEvents"/> fallback's.</remarks>
 public sealed class PowerWatcher : IDisposable
@@ -32,6 +34,7 @@ public sealed class PowerWatcher : IDisposable
     private int _asleep;
     private int _wokeSinceCheck; // the gap the next clock check finds is the sleep Windows told of
     private long _lastCheck;
+    private int _powerSource = (int)PowerSource.Mains;
 
     /// <summary>The PC is about to sleep: close what has to be closed before this returns.</summary>
     public event Action? Suspending;
@@ -41,6 +44,12 @@ public sealed class PowerWatcher : IDisposable
 
     /// <summary>The app was frozen this long without being told the PC was going to sleep, and runs again.</summary>
     public event Action<TimeSpan>? Thawed;
+
+    /// <summary>The PC was plugged in or unplugged: what it runs on now.</summary>
+    public event Action<PowerSource>? PowerSourceChanged;
+
+    /// <summary>What the PC runs on: mains power, unless it is a laptop (or a tablet) on its battery.</summary>
+    public PowerSource PowerSource => (PowerSource)Volatile.Read(ref _powerSource);
 
     /// <summary>Whether Windows will say when the PC goes into Modern Standby (or the older broadcast is all there is).</summary>
     public bool SeesModernStandby => _registration != IntPtr.Zero;
@@ -74,6 +83,7 @@ public sealed class PowerWatcher : IDisposable
         }
 
         _lastCheck = Environment.TickCount64;
+        _powerSource = (int)ReadPowerSource();
         new Thread(WatchClock) { IsBackground = true, Name = "Freeze check" }.Start();
     }
 
@@ -109,9 +119,33 @@ public sealed class PowerWatcher : IDisposable
         else if (!woke) Thawed?.Invoke(gap); // not just the sleep Windows told of
     }
 
+    internal void OnPowerSource(PowerSource source)
+    {
+        if (Interlocked.Exchange(ref _powerSource, (int)source) != (int)source) PowerSourceChanged?.Invoke(source);
+    }
+
     private void WatchClock()
     {
-        while (!_disposed.WaitOne(CheckEvery)) OnCheck(Environment.TickCount64);
+        while (!_disposed.WaitOne(CheckEvery))
+        {
+            OnCheck(Environment.TickCount64);
+            OnPowerSource(ReadPowerSource());
+        }
+    }
+
+    /// <summary>On battery only when Windows says the AC line is off and there is a battery; mains power otherwise.</summary>
+    internal static PowerSource ReadPowerSource()
+    {
+        try
+        {
+            if (GetSystemPowerStatus(out var status) && status.AcLineStatus == AcLineOffline && status.BatteryFlag != NoSystemBattery)
+                return PowerSource.Battery;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            // Can't tell: as a desktop.
+        }
+        return PowerSource.Mains;
     }
 
     private uint OnNotification(IntPtr context, uint type, IntPtr setting)
@@ -153,6 +187,24 @@ public sealed class PowerWatcher : IDisposable
         public IntPtr Callback;
         public IntPtr Context;
     }
+
+    private const byte AcLineOffline = 0;
+    private const byte NoSystemBattery = 128;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SystemPowerStatus
+    {
+        public byte AcLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public int BatteryLifeTime;
+        public int BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
 
     [DllImport("powrprof.dll")]
     private static extern uint PowerRegisterSuspendResumeNotification(int flags, IntPtr recipient, out IntPtr registrationHandle);

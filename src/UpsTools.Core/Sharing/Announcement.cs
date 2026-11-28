@@ -20,9 +20,26 @@ public enum UpsRole
     Resting,
 }
 
+/// <summary>What a PC runs on, as it tells the other PCs: one on mains power takes over a UPS from one on battery.</summary>
+public enum PowerSource
+{
+    /// <summary>It doesn't say: a version from before PCs told.</summary>
+    Unknown,
+
+    /// <summary>Plugged in, or a PC without a battery: holding a link costs it nothing that matters.</summary>
+    Mains,
+
+    /// <summary>On its own battery, which a link to a UPS drains.</summary>
+    Battery,
+}
+
 /// <summary>A UPS in an <see cref="Announcement"/>.</summary>
 /// <param name="Online">For <see cref="UpsRole.Holding"/>: its last read succeeded.</param>
-public sealed record AnnouncedUps(string Key, string Title, PairedUps Device, UpsRole Role, bool Online = false);
+/// <param name="Unreached">
+/// This PC couldn't reach it lately when it was connected to it: on mains power or not, it doesn't take it over from a
+/// PC on battery for a while.
+/// </param>
+public sealed record AnnouncedUps(string Key, string Title, PairedUps Device, UpsRole Role, bool Online = false, bool Unreached = false);
 
 /// <summary>
 /// What a PC tells the others about itself, every few seconds over UDP multicast: its TCP port and what it does with
@@ -33,13 +50,15 @@ public sealed record AnnouncedUps(string Key, string Title, PairedUps Device, Up
 /// <param name="Instance">Tells the running copy of UPS Tools apart (<see cref="SharingHub.Instance"/>).</param>
 /// <param name="Probe">Just started: the others answer with an announcement of their own at once.</param>
 /// <param name="Bye">Stopping: the others forget it at once.</param>
+/// <param name="Power">What it runs on; <see cref="PowerSource.Unknown"/> from a version that doesn't say.</param>
 public sealed record Announcement(
     string Instance,
     string Pc,
     int Port,
     IReadOnlyList<AnnouncedUps> Upses,
     bool Probe = false,
-    bool Bye = false)
+    bool Bye = false,
+    PowerSource Power = PowerSource.Unknown)
 {
     private static readonly byte[] Magic = "UPSD\x01"u8.ToArray();
     private const int FingerprintLength = 8;
@@ -51,12 +70,12 @@ public sealed record Announcement(
 
     internal sealed record Header(string Instance, string Pc);
 
-    internal sealed record Body(int Port, long SentMs, IReadOnlyList<AnnouncedUps> Upses, bool Probe, bool Bye);
+    internal sealed record Body(int Port, long SentMs, IReadOnlyList<AnnouncedUps> Upses, bool Probe, bool Bye, PowerSource Power = PowerSource.Unknown);
 
     public byte[] Seal(byte[] key, byte[] fingerprint, DateTimeOffset now)
     {
         var header = SharingJson.Write(new Header(Instance, Pc));
-        var body = SharingJson.Write(new Body(Port, now.ToUnixTimeMilliseconds(), Upses, Probe, Bye));
+        var body = SharingJson.Write(new Body(Port, now.ToUnixTimeMilliseconds(), Upses, Probe, Bye, Power));
 
         var clear = new byte[Magic.Length + FingerprintLength + 2 + header.Length];
         Magic.CopyTo(clear, 0);
@@ -101,7 +120,8 @@ public sealed record Announcement(
                     datagram.AsSpan(datagram.Length - TagLength), body, datagram.AsSpan(0, headerStart + headerLength));
             var opened = JsonSerializer.Deserialize(body, SharingJson.Info<Body>());
             if (opened is null || (now - DateTimeOffset.FromUnixTimeMilliseconds(opened.SentMs)).Duration() > MaxAge) return null;
-            return new Announcement(header.Instance, header.Pc, opened.Port, opened.Upses ?? [], opened.Probe, opened.Bye);
+            return new Announcement(header.Instance, header.Pc, opened.Port, opened.Upses ?? [], opened.Probe, opened.Bye,
+                Enum.IsDefined(opened.Power) ? opened.Power : PowerSource.Unknown);
         }
         catch (Exception ex) when (ex is JsonException or CryptographicException or ArgumentException)
         {

@@ -198,6 +198,7 @@ public sealed class AppController : ObservableObject
                 Log.Info, CoordinatorTimings);
             coordinator.RouteChanged += OnRouteChanged;
             coordinator.NeighboursChanged += () => _ui.InvokeAsync(ShowNeighbours);
+            coordinator.SetPower(_powerSource);
             coordinator.Start();
             (_server, _coordinator) = (server, coordinator);
             Log.Info($"Sharing with the other PCs on the network (port {sharing.Port}, readings on {server.Port})");
@@ -217,6 +218,19 @@ public sealed class AppController : ObservableObject
             coordinator.Join(unit.Device, unit.Title,
                 connected: unit.Connection?.LastReadDirect == true && unit.Monitor!.LinkState == UpsLinkState.Online);
         foreach (var unit in Upses) ApplyRoute(unit);
+    }
+
+    private PowerSource _powerSource = PowerSource.Mains;
+
+    /// <summary>
+    /// The PC was plugged in or unplugged (or this is what it runs on at start-up): while sharing, a PC on mains power
+    /// takes over the UPSes a PC on battery is connected to (<see cref="UpsCoordinator.SetPower"/>).
+    /// </summary>
+    public void SetPowerSource(PowerSource source)
+    {
+        if (_powerSource == source) return;
+        _powerSource = source;
+        _coordinator?.SetPower(source);
     }
 
     /// <summary>How fast the PCs agree; the defaults unless a test says otherwise.</summary>

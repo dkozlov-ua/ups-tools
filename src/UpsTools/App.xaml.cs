@@ -71,6 +71,8 @@ public partial class App : Application
         _power.Suspending += OnSuspending;
         _power.Resumed += () => Dispatcher.InvokeAsync(() => _controller?.OnResumedFromSleep());
         _power.Thawed += frozen => Dispatcher.InvokeAsync(() => _controller?.OnThawed(frozen));
+        _controller.SetPowerSource(_power.PowerSource);
+        _power.PowerSourceChanged += source => Dispatcher.InvokeAsync(() => _controller?.SetPowerSource(source));
         if (!_power.SeesModernStandby) _controller.Log.Info("Windows won't say when the PC goes into Modern Standby");
         SessionEnding += OnSessionEnding;
 

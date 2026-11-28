@@ -584,6 +584,7 @@ public sealed class MonitorController
                 new MulticastTransport(sharing.Port, loopback, _networks), Log.Info, CoordinatorTimings);
             coordinator.RouteChanged += OnRouteChanged;
             coordinator.NeighboursChanged += () => _ui.Post(ShowNeighbours);
+            coordinator.SetPower(_powerSource);
             coordinator.Start();
             (_server, _coordinator) = (server, coordinator);
             Log.Info($"Sharing with the other devices on the network (port {sharing.Port}, readings on {server.Port})");
@@ -604,6 +605,22 @@ public sealed class MonitorController
                 connected: unit.Connection?.LastReadDirect == true && unit.Monitor!.LinkState == UpsLinkState.Online);
         foreach (var unit in Upses) ApplyRoute(unit);
     }
+
+    private PowerSource _powerSource = PowerSource.Mains;
+
+    /// <summary>
+    /// The phone was plugged in or unplugged (or this is what it runs on as monitoring starts): while sharing, a
+    /// device on mains power takes over the UPSes one on battery is connected to (<see cref="UpsCoordinator.SetPower"/>).
+    /// </summary>
+    public void SetPowerSource(PowerSource source)
+    {
+        if (_powerSource == source) return;
+        _powerSource = source;
+        _coordinator?.SetPower(source);
+    }
+
+    /// <summary>What the phone runs on, as last told.</summary>
+    public PowerSource PowerSource => _powerSource;
 
     /// <summary>How fast the devices agree; the defaults unless a test says otherwise.</summary>
     internal static UpsCoordinator.Timings CoordinatorTimings { get; set; } = UpsCoordinator.Timings.Default;
@@ -635,8 +652,8 @@ public sealed class MonitorController
     {
         Neighbours = [.. (_coordinator?.Neighbours ?? []).Select(pc =>
             !pc.SameCode ? $"{pc.Pc}: shares with another code"
-            : pc.Holding.Count == 0 ? $"{pc.Pc}: not connected to a UPS"
-            : $"{pc.Pc}: connected to {string.Join(", ", pc.Holding)}")];
+            : pc.Holding.Count == 0 ? $"{pc.Pc}{(pc.OnBattery ? " (on battery)" : "")}: not connected to a UPS"
+            : $"{pc.Pc}{(pc.OnBattery ? " (on battery)" : "")}: connected to {string.Join(", ", pc.Holding)}")];
         if (!SharingProblem && _server is not null) SharingStatus = SharingText();
         SharingChanged?.Invoke();
     }
